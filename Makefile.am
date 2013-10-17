@@ -172,6 +172,7 @@ test_SRC := \
 	test/storage/MockBase.java	\
 	test/tools/TestFsck.java	\
 	test/tools/TestTextImporter.java	\
+	test/tools/TestUID.java	\
 	test/tree/TestBranch.java	\
 	test/tree/TestLeaf.java	\
 	test/tree/TestTree.java	\
