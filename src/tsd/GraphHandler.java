@@ -387,7 +387,7 @@ final class GraphHandler implements HttpRpc {
     final HashMap<String, Object> map = loadCachedJson(query, cacheEntries);
     // If we don't have a JSON file it's a complete cache miss.  If we have
     // one, and it says 0 data points were plotted, it's a negative cache hit.
-    if (map == null || !map.containsKey("plotted") || 
+    if (map == null || !map.containsKey("plotted") ||
         ((Integer)map.get("plotted")) == 0) {
       return false;
     }
@@ -501,7 +501,7 @@ final class GraphHandler implements HttpRpc {
       return null;
     }
     json_cache = null;
-    
+
     return (HashMap<String, Object>) JSON.parseToObject(json, HashMap.class);
   }
 
@@ -750,9 +750,9 @@ final class GraphHandler implements HttpRpc {
   }
 
   /** Name of the wrapper script we use to execute Gnuplot.  */
-  private static final String WRAPPER = 
+  private static final String WRAPPER =
     IS_WINDOWS ? "mygnuplot.bat" : "mygnuplot.sh";
-  
+
   /** Path to the wrapper script.  */
   private static final String GNUPLOT;
   static {
