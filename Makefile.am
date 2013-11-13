@@ -26,7 +26,8 @@ builddata_SRC := src/BuildData.java
 BUILT_SOURCES = $(builddata_SRC)
 nodist_bin_SCRIPTS = tsdb
 dist_noinst_SCRIPTS = src/create_table.sh
-dist_pkgdata_SCRIPTS := src/mygnuplot.sh src/mygnuplot.bat src/opentsdb.conf
+# TODO: Move opentsdb-init-d.sh to /etc/init.d/opentsdb.
+dist_pkgdata_SCRIPTS := src/mygnuplot.sh src/mygnuplot.bat src/opentsdb.conf src/opentsdb-init-d.sh
 dist_noinst_DATA = pom.xml.in
 tsdb_SRC := \
 	src/core/Aggregator.java	\
