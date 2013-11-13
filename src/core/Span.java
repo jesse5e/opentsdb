@@ -510,24 +510,20 @@ final class Span implements DataPoints {
       }
 
       // Look ahead to see if all the data points that fall within the next
-      // interval turn out to be integers.  While we do this, compute the
-      // average timestamp of all the datapoints in that interval.
-      long newtime = 0;
+      // interval turn out to be integers.
       final short saved_row_index = row_index;
       final int saved_state = current_row.saveState();
       // Since we know hasNext() returned true, we have at least 1 point.
       moveToNext();
-      time = current_row.timestamp() + interval;  // end of interval
+      long endOfInterval = current_row.timestamp() / interval * interval
+          + interval;
+      time = endOfInterval;
       //LOG.info("End of interval: " + time + " Interval: " + interval);
       boolean integer = true;
-      int npoints = 0;
       do {
-        npoints++;
-        newtime += current_row.timestamp();
         //LOG.debug("Downsampling @ time " + current_row.timestamp());
         integer &= current_row.isInteger();
-      } while (moveToNext() && current_row.timestamp() < time);
-      newtime /= npoints;
+      } while (moveToNext() && current_row.timestamp() < endOfInterval);
 
       // Now that we're done looking ahead, let's go back where we were.
       if (row_index != saved_row_index) {
@@ -543,8 +539,8 @@ final class Span implements DataPoints {
       } else {
         value = Double.doubleToRawLongBits(downsampler.runDouble(this));
       }
-      // ... so update the time only here.
-      time = newtime;
+      // The new timestamp is the middle of the current interval.
+      time = endOfInterval - interval / 2;
       //LOG.info("Downsampled avg time " + time);
       if (!integer) {
         time |= FLAG_FLOAT;
