@@ -333,12 +333,12 @@ public final class TestSpan {
     int intervalMillis = 1000000;
     Aggregator downsampler = Aggregators.get("avg");
     final SeekableView it = span.downsampler(intervalMillis, downsampler);
-    List<Long> values = Lists.newArrayList();
+    List<Double> values = Lists.newArrayList();
     List<Long> timestampsInMillis = Lists.newArrayList();
     while (it.hasNext()) {
       DataPoint dp = it.next();
-      assertTrue(dp.isInteger());
-      values.add(dp.longValue());
+      assertFalse(dp.isInteger());
+      values.add(dp.doubleValue());
       timestampsInMillis.add(dp.timestamp());
     }
 
