@@ -13,6 +13,7 @@
 package net.opentsdb.core;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -500,12 +501,29 @@ public final class TestTsdbQuery {
     assertNull(dps[0].getAnnotations());
     assertEquals("web01", dps[0].getTags().get("host"));
     
-    int i = 1;
+    // Timeseries in intervals: (1), (2, 3), (4, 5), ... (298, 299), (300)
+    int i = 0;
     for (DataPoint dp : dps[0]) {
-      assertEquals(i, dp.longValue());
-      i += 2;
+      // Downsampler outputs just doubles.
+      assertFalse(dp.isInteger());
+      if (i == 0) {
+        // The first time interval has just one value - (1).
+        assertEquals(1, dp.doubleValue(), 0.00001);
+      } else if (i >= 150) {
+        // The last time interval has just one value - (300).
+        assertEquals(300, dp.doubleValue(), 0.00001);
+      } else {
+        // Each interval has two consecutive numbers - (i*2, i*2+1).
+        // Takes the average of the values of this interval.
+        double value = i * 2 + 0.5;
+        assertEquals(value, dp.doubleValue(), 0.00001);
+      }
+      assertEquals(30000, dp.timestamp() % 60000);
+      ++i;
     }
-    assertEquals(150, dps[0].size());
+    // Out of 300 values, the first and the last intervals have one value each,
+    // and the 149 intervals in the middle have two values for each.
+    assertEquals(151, dps[0].size());
   }
   
   @Test
@@ -524,12 +542,29 @@ public final class TestTsdbQuery {
     assertNull(dps[0].getAnnotations());
     assertEquals("web01", dps[0].getTags().get("host"));
     
-    int i = 1;
+    // Timeseries in intervals: (1), (2, 3), (4, 5), ... (298, 299), (300)
+    int i = 0;
     for (DataPoint dp : dps[0]) {
-      assertEquals(i, dp.longValue());
-      i += 2;
+      // Downsampler outputs just doubles.
+      assertFalse(dp.isInteger());
+      if (i == 0) {
+        // The first time interval has just one value - (1).
+        assertEquals(1, dp.doubleValue(), 0.00001);
+      } else if (i >= 150) {
+        // The last time interval has just one value - (300).
+        assertEquals(300, dp.doubleValue(), 0.00001);
+      } else {
+        // Each interval has two consecutive numbers - (i*2, i*2+1).
+        // Takes the average of the values of this interval.
+        double value = i * 2 + 0.5;
+        assertEquals(value, dp.doubleValue(), 0.00001);
+      }
+      assertEquals(500, dp.timestamp() % 1000);
+      ++i;
     }
-    assertEquals(150, dps[0].size());
+    // Out of 300 values, the first and the last intervals have one value each,
+    // and the 149 intervals in the middle have two values for each.
+    assertEquals(151, dps[0].size());
   }
   
   @Test
@@ -548,10 +583,28 @@ public final class TestTsdbQuery {
     assertNull(dps[0].getAnnotations());
     assertEquals("web01", dps[0].getTags().get("host"));
     
+    // Timeseries in intervals: (1), (2, 3), (4, 5), ... (298, 299), (300)
+    // After downampling: 1, 2.5, 4.5, ... 298.5, 300
+    int i = 0;
     for (DataPoint dp : dps[0]) {
-      assertEquals(0.033F, dp.doubleValue(), 0.001);
+      assertFalse(dp.isInteger());
+      if (i == 0) {
+        // The value of the first interval is one and the next one is 2.5
+        // 0.025 = (2.5 - 1) / 60 seconds.
+        assertEquals(0.025F, dp.doubleValue(), 0.001);
+      } else if (i >= 149) {
+        // The value of the last interval is 300 and the previous one is 298.5
+        // 0.025 = (300 - 298.5) / 60 seconds.
+        assertEquals(0.025F, dp.doubleValue(), 0.00001);
+      } else {
+        // 0.033 = 2 / 60 seconds where 2 is the difference of the values
+        // of two consecutive intervals.
+        assertEquals(0.033F, dp.doubleValue(), 0.001);
+      }
+      assertEquals(30000, dp.timestamp() % 60000);
+      ++i;
     }
-    assertEquals(149, dps[0].size());
+    assertEquals(150, dps[0].size());
   }
   
   @Test
@@ -570,10 +623,28 @@ public final class TestTsdbQuery {
     assertNull(dps[0].getAnnotations());
     assertEquals("web01", dps[0].getTags().get("host"));
     
+    // Timeseries in intervals: (1), (2, 3), (4, 5), ... (298, 299), (300)
+    // After downampling: 1, 2.5, 4.5, ... 298.5, 300
+    int i = 0;
     for (DataPoint dp : dps[0]) {
-      assertEquals(2.0F, dp.doubleValue(), 0.001);
+      assertFalse(dp.isInteger());
+      if (i == 0) {
+        // The value of the first interval is one and the next one is 2.5
+        // 1.5 = (2.5 - 1) / 1.000 seconds.
+        assertEquals(1.5F, dp.doubleValue(), 0.001);
+      } else if (i >= 149) {
+        // The value of the last interval is 300 and the previous one is 298.5
+        // 1.5 = (300 - 298.5) / 1.000 seconds.
+        assertEquals(1.5, dp.doubleValue(), 0.00001);
+      } else {
+        // 2 = 2 / 1.000 seconds where 2 is the difference of the values
+        // of two consecutive intervals.
+        assertEquals(2F, dp.doubleValue(), 0.001);
+      }
+      assertEquals(500, dp.timestamp() % 1000);
+      ++i;
     }
-    assertEquals(149, dps[0].size());
+    assertEquals(150, dps[0].size());
   }
 
   @Test
@@ -803,12 +874,29 @@ public final class TestTsdbQuery {
     assertNull(dps[0].getAnnotations());
     assertEquals("web01", dps[0].getTags().get("host"));
     
-    double i = 1.375D;
+    // Timeseries in intervals: (1.25), (1.5, 1.75), (2, 2.25), ...
+    // (75.5, 75.75), (76).
+    // After downampling: 1.25, 1.625, 2.125, ... 75.625, 76
+    int i = 0;
     for (DataPoint dp : dps[0]) {
-      assertEquals(i, dp.doubleValue(), 0.00001);
-      i += 0.5D;
+      if (i == 0) {
+        // The first time interval has just one value - 1.25.
+        assertEquals(1.25, dp.doubleValue(), 0.00001);
+      } else if (i >= 150) {
+        // The last time interval has just one value - 76.
+        assertEquals(76D, dp.doubleValue(), 0.00001);
+      } else {
+        // Each interval has two consecutive numbers - (i*0.5+1, i*0.5+1.25).
+        // Takes the average of the values of this interval.
+        double value = (i + 2.25) / 2;
+        assertEquals(value, dp.doubleValue(), 0.00001);
+      }
+      assertEquals(30000, dp.timestamp() % 60000);
+      ++i;
     }
-    assertEquals(150, dps[0].size());
+    // Out of 300 values, the first and the last intervals have one value each,
+    // and the 149 intervals in the middle have two values for each.
+    assertEquals(151, dps[0].size());
   }
   
   @Test
@@ -826,13 +914,30 @@ public final class TestTsdbQuery {
     assertTrue(dps[0].getAggregatedTags().isEmpty());
     assertNull(dps[0].getAnnotations());
     assertEquals("web01", dps[0].getTags().get("host"));
-    
-    double i = 1.375D;
+
+    // Timeseries in intervals: (1.25), (1.5, 1.75), (2, 2.25), ...
+    // (75.5, 75.75), (76).
+    // After downampling: 1.25, 1.625, 2.125, ... 75.625, 76
+    int i = 0;
     for (DataPoint dp : dps[0]) {
-      assertEquals(i, dp.doubleValue(), 0.00001);
-      i += 0.5D;
+      if (i == 0) {
+        // The first time interval has just one value.
+        assertEquals(1.25, dp.doubleValue(), 0.00001);
+      } else if (i >= 150) {
+        // The last time interval has just one value.
+        assertEquals(76D, dp.doubleValue(), 0.00001);
+      } else {
+        // Each interval has two consecutive numbers - (i*0.5+1, i*0.5+1.25).
+        // Takes the average of the values of this interval.
+        double value = (i + 2.25) / 2;
+        assertEquals(value, dp.doubleValue(), 0.00001);
+      }
+      assertEquals(500, dp.timestamp() % 1000);
+      ++i;
     }
-    assertEquals(150, dps[0].size());
+    // Out of 300 values, the first and the last intervals have one value each,
+    // and the 149 intervals in the middle have two values for each.
+    assertEquals(151, dps[0].size());
   }
   
   @Test
@@ -851,10 +956,28 @@ public final class TestTsdbQuery {
     assertNull(dps[0].getAnnotations());
     assertEquals("web01", dps[0].getTags().get("host"));
     
+    // Timeseries in intervals: (1.25), (1.5, 1.75), (2, 2.25), ...
+    // (75.5, 75.75), (76).
+    // After downampling: 1.25, 1.625, 2.125, ... 75.625, 76
+    int i = 0;
     for (DataPoint dp : dps[0]) {
-      assertEquals(0.00833F, dp.doubleValue(), 0.00001);
+      if (i == 0) {
+        // The value of the first interval is 1.25 and the next one is 1.625
+        // 0.00625 = (1.625 - 1.25) / 60 seconds.
+        assertEquals(0.00625F, dp.doubleValue(), 0.000001);
+      } else if (i >= 149) {
+        // The value of the last interval is 76 and the previous one is 75.625
+        // 0.00625 = (76 - 75.625) / 60 seconds.
+        assertEquals(0.00625F, dp.doubleValue(), 0.000001);
+      } else {
+        // 0.00833 = 0.5 / 60 seconds where 0.5 is the difference of the values
+        // of two consecutive intervals.
+        assertEquals(0.00833F, dp.doubleValue(), 0.00001);
+      }
+      assertEquals(30000, dp.timestamp() % 60000);
+      ++i;
     }
-    assertEquals(149, dps[0].size());
+    assertEquals(150, dps[0].size());
   }
   
   @Test
@@ -873,10 +996,28 @@ public final class TestTsdbQuery {
     assertNull(dps[0].getAnnotations());
     assertEquals("web01", dps[0].getTags().get("host"));
     
+    // Timeseries in intervals: (1.25), (1.5, 1.75), (2, 2.25), ...
+    // (75.5, 75.75), (76).
+    // After downampling: 1.25, 1.625, 2.125, ... 75.625, 76
+    int i = 0;
     for (DataPoint dp : dps[0]) {
-      assertEquals(0.5F, dp.doubleValue(), 0.00001);
+      if (i == 0) {
+        // The value of the first interval is 1.25 and the next one is 1.625
+        // 0.375 = (1.625 - 1.25) / 1.000 seconds.
+        assertEquals(0.375F, dp.doubleValue(), 0.000001);
+      } else if (i >= 149) {
+        // The value of the last interval is 76 and the previous one is 75.625
+        // 0.375 = (76 - 75.625) / 1.000 seconds.
+        assertEquals(0.375F, dp.doubleValue(), 0.000001);
+      } else {
+        // 0.5 = 0.5 / 1.000 seconds where 0.5 is the difference of the values
+        // of two consecutive intervals.
+        assertEquals(0.5F, dp.doubleValue(), 0.00001);
+      }
+      assertEquals(500, dp.timestamp() % 1000);
+      ++i;
     }
-    assertEquals(149, dps[0].size());
+    assertEquals(150, dps[0].size());
   }
   
   @Test
