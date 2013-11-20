@@ -602,10 +602,12 @@ final class SpanGroup implements DataPoints {
       // Initialize every Iterator, fetch their first values that fall
       // within our time range.
       for (int i = 0; i < size; i++) {
-        final SeekableView it =
-          (downsampler == null
-           ? spans.get(i).spanIterator()
-           : spans.get(i).downsampler(sample_interval, downsampler));
+        final SeekableView it;
+        if (downsampler == null) {
+          it = spans.get(i).spanIterator();
+        } else {
+          it = spans.get(i).downsampler(sample_interval, downsampler);
+        }
         iterators[i] = it;
         it.seek(start_time);
         final DataPoint dp;
