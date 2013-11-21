@@ -50,7 +50,11 @@ import net.opentsdb.meta.Annotation;
  * iterator when using the {@link Span.DownsamplingIterator}.
  */
 final class SpanGroup implements DataPoints {
-  
+
+  // TODO: Make it configurable.
+  /** Interval to fix underlying timeseries for downsampling. */
+  private static final int FIXED_INTERVAL_MILLIS = 10000;
+
   /** Start time (UNIX timestamp in seconds or ms) on 32 bits ("unsigned" int). */
   private final long start_time;
 
@@ -352,7 +356,7 @@ final class SpanGroup implements DataPoints {
     // TODO(tsuna): There is a way of doing this way more efficiently by
     // inspecting the Spans and counting only data points that fall in
     // our time range.
-    final SGIterator it = new SGIterator(aggregator.interpolationMethod());
+    final SeekableView it = iterator();
     int size = 0;
     while (it.hasNext()) {
       it.next();
@@ -370,7 +374,23 @@ final class SpanGroup implements DataPoints {
   }
 
   public SeekableView iterator() {
-    return new SGIterator(aggregator.interpolationMethod());
+    Interpolation interpolation = aggregator.interpolationMethod();
+    if (downsampler == null) {
+      // TODO: Pass span iterators rather than unnecessary sampling interval.
+      return new AggregationIter(interpolation, FIXED_INTERVAL_MILLIS);
+    } if (sample_interval <= FIXED_INTERVAL_MILLIS) {
+      // Honors the given sample interval if it is too small.
+      return new AggregationIter(interpolation, sample_interval);
+    } else {
+      // Downsamples aggregated values.
+      // 1. Downsamples each timeseries to {@link #FIXED_INTERVAL_MILLIS}.
+      // 2. Aggregates values across downsampled timeseries. It is done to
+      //    reduce the overhead of interpolation while aggregating.
+      // 3. Downsamples aggregated values.
+      SeekableView aggregationIter = new AggregationIter(interpolation,
+          FIXED_INTERVAL_MILLIS);
+      return new Downsampler(aggregationIter, sample_interval, downsampler);
+    }
   }
 
   /**
@@ -382,7 +402,7 @@ final class SpanGroup implements DataPoints {
       throw new IndexOutOfBoundsException("negative index: " + i);
     }
     final int saved_i = i;
-    final SGIterator it = new SGIterator(aggregator.interpolationMethod());
+    final SeekableView it = iterator();
     DataPoint dp = null;
     while (it.hasNext() && i >= 0) {
       dp = it.next();
@@ -525,7 +545,7 @@ final class SpanGroup implements DataPoints {
    * throwing it away like we do when rates aren't involved, we "migrate" it
    * to the 3rd part of the array ("prev") so we can use it for the next rate.
    */
-  private final class SGIterator
+  private final class AggregationIter
     implements SeekableView, DataPoint,
                Aggregator.Longs, Aggregator.Doubles {
 
@@ -593,7 +613,8 @@ final class SpanGroup implements DataPoints {
     private int pos;
 
     /** Creates a new iterator for this {@link SpanGroup}. */
-    public SGIterator(final Interpolation method) {
+    public AggregationIter(final Interpolation method,
+        final int intervalMillis) {
       this.method = method;
       final int size = spans.size();
       iterators = new SeekableView[size];
@@ -606,7 +627,7 @@ final class SpanGroup implements DataPoints {
         if (downsampler == null) {
           it = spans.get(i).spanIterator();
         } else {
-          it = spans.get(i).downsampler(sample_interval, downsampler);
+          it = spans.get(i).downsampler(intervalMillis, downsampler);
         }
         iterators[i] = it;
         it.seek(start_time);
