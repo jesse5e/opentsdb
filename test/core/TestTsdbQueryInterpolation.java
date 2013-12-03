@@ -453,8 +453,8 @@ public class TestTsdbQueryInterpolation {
 
     PowerMockito.mockStatic(IncomingDataPoints.class);
     PowerMockito.doAnswer(
-        new Answer<Deferred<byte[]>>() {
-          public Deferred<byte[]> answer(final InvocationOnMock args)
+        new Answer<byte[]>() {
+          public byte[] answer(final InvocationOnMock args)
             throws Exception {
             final String metric = (String)args.getArguments()[1];
             final Map<String, String> tags = 
@@ -462,19 +462,15 @@ public class TestTsdbQueryInterpolation {
 
             if (metric.equals("sys.cpu.user")) {
               if (tags.get("host").equals("web01")) {
-                return Deferred.fromResult(
-                    new byte[] { 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1});
+                return new byte[] { 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1};
               } else {
-                return Deferred.fromResult(
-                    new byte[] { 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 2});
+                return new byte[] { 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 2};
               }
             } else {
               if (tags.get("host").equals("web01")) {
-                return Deferred.fromResult(
-                    new byte[] { 0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1});
+                return new byte[] { 0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1};
               } else {
-                return Deferred.fromResult(
-                    new byte[] { 0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 0, 0, 2});
+                return new byte[] { 0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 0, 0, 2};
               }
             }
           }

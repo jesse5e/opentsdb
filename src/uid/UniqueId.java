@@ -556,6 +556,7 @@ public final class UniqueId implements UniqueIdInterface {
       return BadTimeout.minutes(getIdAsync(name));
     } catch (NoSuchUniqueName e) {
       Deferred<byte[]> assignment = null;
+      boolean pending = false;
       synchronized (pending_assignments) {
         assignment = pending_assignments.get(name);
         if (assignment == null) {
@@ -567,18 +568,24 @@ public final class UniqueId implements UniqueIdInterface {
           assignment = new Deferred<byte[]>();
           pending_assignments.put(name, assignment);
         } else {
-          LOG.info("Already waiting for UID assignment: " + name);
-          try {
-            return assignment.joinUninterruptibly();
-          } catch (Exception e1) {
-            throw new RuntimeException("Should never be here", e);
-          }
+          pending = true;
+        }
+      }
+      
+      if (pending) {
+        LOG.info("Already waiting for UID assignment: " + name);
+        try {
+          return BadTimeout.minutes(assignment);
+        } catch (Exception e1) {
+          throw new RuntimeException("Should never be here", e);
         }
       }
       
       // start the assignment dance after stashing the deferred
       try {
-        return new UniqueIdAllocator(name, assignment).tryAllocate().joinUninterruptibly();
+        return BadTimeout.minutes(new UniqueIdAllocator(name, assignment).tryAllocate());
+      } catch (RuntimeException e1) {
+        throw e1;
       } catch (Exception e1) {
         throw new RuntimeException("Should never be here", e);
       }
