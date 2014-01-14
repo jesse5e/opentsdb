@@ -42,9 +42,11 @@ tsdb_SRC := \
 	src/core/IncomingDataPoints.java	\
 	src/core/IllegalDataException.java	\
 	src/core/Internal.java	\
+	src/core/MutableDataPoint.java \
 	src/core/MutableDoubleDataPoint.java \
 	src/core/Query.java	\
 	src/core/RateOptions.java  \
+	src/core/RateSpan.java  \
 	src/core/RowKey.java	\
 	src/core/RowSeq.java	\
 	src/core/SeekableView.java	\
@@ -133,10 +135,13 @@ tsdb_DEPS = \
 pkgdata_DATA = $(tsdb_DEPS) $(jar)
 
 test_SRC := \
+	test/core/SeekableViewsForTest.java \
 	test/core/TestAggregators.java \
 	test/core/TestCompactionQueue.java	\
 	test/core/TestDownsampler.java \
 	test/core/TestInternal.java	\
+	test/core/TestMutableDataPoint.java	\
+	test/core/TestMutableDoubleDataPoint.java	\
 	test/core/TestRowSeq.java	\
 	test/core/TestSpan.java	\
 	test/core/TestTags.java	\

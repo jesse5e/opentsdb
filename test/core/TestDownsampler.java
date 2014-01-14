@@ -18,7 +18,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
-import java.util.NoSuchElementException;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -30,12 +29,12 @@ import com.google.common.collect.Lists;
 public class TestDownsampler {
 
   private static final DataPoint[] DATA_POINTS = new DataPoint[] {
-    SeekableViewsForTest.newLongDataPoint(1356998400000L, 40),
-    SeekableViewsForTest.newLongDataPoint(1356998400000L + 2000000, 50),
-    SeekableViewsForTest.newLongDataPoint(1357002000000L, 40),
-    SeekableViewsForTest.newLongDataPoint(1357002000000L + 5000, 50),
-    SeekableViewsForTest.newLongDataPoint(1357005600000L, 40),
-    SeekableViewsForTest.newLongDataPoint(1357005600000L + 2000000, 50)
+    MutableDataPoint.ofLongValue(1356998400000L, 40),
+    MutableDataPoint.ofLongValue(1356998400000L + 2000000, 50),
+    MutableDataPoint.ofLongValue(1357002000000L, 40),
+    MutableDataPoint.ofLongValue(1357002000000L + 5000, 50),
+    MutableDataPoint.ofLongValue(1357005600000L, 40),
+    MutableDataPoint.ofLongValue(1357005600000L + 2000000, 50)
   };
   private static final int THOUSAND_SECONDS = 1000000;  // in milliseconds.
   private static final Aggregator AVG = Aggregators.get("avg");;
@@ -106,75 +105,5 @@ public class TestDownsampler {
     DataPoint dp = downsampler.next();
     System.out.println(downsampler.toString());
     assertTrue(downsampler.toString().contains(dp.toString()));
-  }
-
-  // TODO: Factor out to a standalone class.
-  /** Helper class to mock SeekableView. */
-  public static class SeekableViewsForTest {
-
-    public static DataPoint newLongDataPoint(final long timestamp,
-        final long value) {
-      return new DataPoint() {
-
-        @Override
-        public long timestamp() {
-          return timestamp;
-        }
-
-        @Override
-        public boolean isInteger() {
-          return true;
-        }
-
-        @Override
-        public long longValue() {
-          return value;
-        }
-
-        @Override
-        public double doubleValue() {
-          throw new ClassCastException("this value is not a double");
-        }
-
-        @Override
-        public double toDouble() {
-          return value;
-        }
-      };
-    }
-
-    public static SeekableView fromArray(final DataPoint[] dataPoints) {
-      return new SeekableView() {
-
-        private int index = 0;
-
-        @Override
-        public boolean hasNext() {
-          return dataPoints.length > index;
-        }
-
-        @Override
-        public DataPoint next() {
-          if (hasNext()) {
-            return dataPoints[index++];
-          }
-          throw new NoSuchElementException("no more values");
-        }
-
-        @Override
-        public void remove() {
-          throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void seek(long timestamp) {
-          for (; index < dataPoints.length; ++index) {
-            if (dataPoints[index].timestamp() >= timestamp) {
-              break;
-            }
-          }
-        }
-      };
-    }
   }
 }
