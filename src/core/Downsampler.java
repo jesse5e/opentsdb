@@ -112,6 +112,9 @@ public class Downsampler implements SeekableView {
     /** The last data point extracted from the source. */
     private MutableDoubleDataPoint nextDataPoint = new MutableDoubleDataPoint();
 
+    /** True if it is initialized for iterating intervals. */
+    private boolean initialized = false;
+
     /**
      * Constructs a ValuesInInterval instance.
      *
@@ -121,8 +124,18 @@ public class Downsampler implements SeekableView {
     ValuesInInterval(SeekableView source, int interval) {
       this.source = source;
       this.interval = interval;
-      moveToNextValue();
-      resetEndOfInterval();
+    }
+
+    /** Initializes to iterate intervals. */
+    private void initializeIfNotDone() {
+      // NOTE: Delay initialization is required to not access any data point
+      // from source until a user requests it explicitly to avoid the severe
+      // performance penalty by accessing the first data of a span.
+      if (!initialized) {
+        initialized = true;
+        moveToNextValue();
+        resetEndOfInterval();
+      }
     }
 
     /** Extracts the next value from the source. */
@@ -145,14 +158,14 @@ public class Downsampler implements SeekableView {
 
     /** Moves to the next available interval. */
     void moveToNextInterval() {
+      initializeIfNotDone();
       resetEndOfInterval();
     }
 
     /** Advances the interval iterator to the given timestamp. */
     void seekInterval(long timestamp) {
       source.seek(timestamp);
-      moveToNextValue();
-      resetEndOfInterval();
+      initialized = false;
     }
 
     /** Returns the representative timestamp of the current interval. */
@@ -163,8 +176,13 @@ public class Downsampler implements SeekableView {
       return timestampEndInterval;
     }
 
+    // ---------------------- //
+    // Doubles interface //
+    // ---------------------- //
+
     @Override
     public boolean hasNextValue() {
+      initializeIfNotDone();
       return hasNextValueFromSource &&
           nextDataPoint.timestamp() < timestampEndInterval;
     }

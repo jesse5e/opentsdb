@@ -31,6 +31,8 @@ public class RateSpan implements SeekableView {
   /** The current rate that has been returned to a caller by {@link #next}. */
   private final MutableDoubleDataPoint currentRate =
       new MutableDoubleDataPoint();
+  /** True if it is initialized for iterating rates of changes. */
+  private boolean initialized = false;
 
   /**
    * Constructs a {@link RateSpan} instance.
@@ -40,7 +42,6 @@ public class RateSpan implements SeekableView {
   RateSpan(final SeekableView source, final RateOptions options) {
     this.source = source;
     this.options = options;
-    setFirstData();
   }
 
   // ------------------ //
@@ -49,11 +50,13 @@ public class RateSpan implements SeekableView {
 
   @Override
   public boolean hasNext() {
+    initializeIfNotDone();
     return source.hasNext();
   }
 
   @Override
   public DataPoint next() {
+    initializeIfNotDone();
     moveToNextRate();
     return currentRate;
   }
@@ -70,12 +73,23 @@ public class RateSpan implements SeekableView {
   @Override
   public void seek(long timestamp) {
     source.seek(timestamp);
-    setFirstData();
+    initialized = false;
   }
 
   // ---------------------- //
   // Private methods        //
   // ---------------------- //
+
+  /** Initializes to iterate intervals. */
+  private void initializeIfNotDone() {
+    // NOTE: Delay initialization is required to not access any data point
+    // from source until a user requests it explicitly to avoid the severe
+    // performance penalty by accessing the first data of a span.
+    if (!initialized) {
+      initialized = true;
+      setFirstData();
+    }
+  }
 
   /**
    * Sets the first current data to calculates the first rate for the

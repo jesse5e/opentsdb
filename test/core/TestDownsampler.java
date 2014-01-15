@@ -16,6 +16,9 @@ package net.opentsdb.core;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import java.util.List;
 
@@ -44,12 +47,13 @@ public class TestDownsampler {
 
   @Before
   public void setup() {
-    source = SeekableViewsForTest.fromArray(DATA_POINTS);
+    source = spy(SeekableViewsForTest.fromArray(DATA_POINTS));
   }
 
   @Test
   public void testDownsampler() {
     downsampler = new Downsampler(source, THOUSAND_SECONDS, AVG);
+    verify(source, never()).next();
     List<Double> values = Lists.newArrayList();
     List<Long> timestampsInMillis = Lists.newArrayList();
     while (downsampler.hasNext()) {
@@ -81,6 +85,7 @@ public class TestDownsampler {
   public void testSeek() {
     downsampler = new Downsampler(source, THOUSAND_SECONDS, AVG);
     downsampler.seek(1357002000000L);
+    verify(source, never()).next();
     List<Double> values = Lists.newArrayList();
     List<Long> timestampsInMillis = Lists.newArrayList();
     while (downsampler.hasNext()) {

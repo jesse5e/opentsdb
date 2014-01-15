@@ -15,6 +15,9 @@ package net.opentsdb.core;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import java.util.NoSuchElementException;
 
@@ -64,13 +67,14 @@ public class TestRateSpan {
 
   @Before
   public void setup() {
-    source = SeekableViewsForTest.fromArray(DATA_POINTS);
+    source = spy(SeekableViewsForTest.fromArray(DATA_POINTS));
     options = new RateOptions();
   }
 
   @Test
   public void testRateSpan() {
     RateSpan rateSpan = new RateSpan(source, options);
+    verify(source, never()).next();
     assertTrue(rateSpan.hasNext());
     DataPoint dp = rateSpan.next();
     assertFalse(dp.isInteger());
@@ -114,6 +118,7 @@ public class TestRateSpan {
   public void testSeek() {
     RateSpan rateSpan = new RateSpan(source, options);
     rateSpan.seek(1357002000000L);
+    verify(source, never()).next();
     for (DataPoint rate : RATES_AFTER_SEEK) {
       assertTrue(rateSpan.hasNext());
       assertTrue(rateSpan.hasNext());
@@ -170,6 +175,7 @@ public class TestRateSpan {
     options = new RateOptions(true, COUNTER_MAX,
                               RateOptions.DEFAULT_RESET_VALUE);
     RateSpan rateSpan = new RateSpan(source, options);
+    verify(source, never()).next();
     for (DataPoint rate : RATES_FOR_COUNTER) {
       assertTrue(rateSpan.hasNext());
       assertTrue(rateSpan.hasNext());
