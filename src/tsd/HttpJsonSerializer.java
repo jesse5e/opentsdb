@@ -51,6 +51,7 @@ import net.opentsdb.search.SearchQuery;
 import net.opentsdb.tree.Branch;
 import net.opentsdb.tree.Tree;
 import net.opentsdb.tree.TreeRule;
+import net.opentsdb.tsd.AnnotationRpc.AnnotationBulkDelete;
 import net.opentsdb.tsd.QueryRpc.LastPointQuery;
 import net.opentsdb.utils.Config;
 import net.opentsdb.utils.JSON;
@@ -415,6 +416,23 @@ class HttpJsonSerializer extends HttpSerializer {
     }
     
     return JSON.parseToObject(json, TR_ANNOTATIONS);
+  }
+  
+  /**
+   * Parses a bulk annotation deletion query object
+   * @return Settings used to bulk delete annotations
+   * @throws JSONException if parsing failed
+   * @throws BadRequestException if the content was missing or parsing failed
+   */
+  public AnnotationBulkDelete parseAnnotationBulkDeleteV1() {
+    final String json = query.getContent();
+    if (json == null || json.isEmpty()) {
+      throw new BadRequestException(HttpResponseStatus.BAD_REQUEST,
+          "Missing message content",
+          "Supply valid JSON formatted data in the body of your request");
+    }
+    
+    return JSON.parseToObject(json, AnnotationBulkDelete.class);
   }
   
   /**
@@ -853,6 +871,17 @@ class HttpJsonSerializer extends HttpSerializer {
    */
   public ChannelBuffer formatAnnotationsV1(final List<Annotation> notes) {
     return serializeJSON(notes);
+  }
+  
+  /**
+   * Format the results of a bulk annotation deletion
+   * @param notes The annotation deletion request to return
+   * @return A ChannelBuffer object to pass on to the caller
+   * @throws JSONException if serialization failed
+   */
+  public ChannelBuffer formatAnnotationBulkDeleteV1(
+      final AnnotationBulkDelete request) {
+    return serializeJSON(request);
   }
   
   /**
