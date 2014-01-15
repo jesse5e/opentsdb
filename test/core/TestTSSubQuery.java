@@ -38,8 +38,9 @@ public final class TestTSSubQuery {
     assertEquals(Aggregators.SUM, sub.aggregator());
     assertEquals(Aggregators.AVG, sub.downsampler());
     assertEquals(300000, sub.downsampleInterval());
+    assertEquals(Long.MAX_VALUE, sub.interpolationTimeLimitMillis());
   }
-  
+
   @Test
   public void validateTS() {
     TSSubQuery sub = getMetricForValidate();
@@ -54,8 +55,9 @@ public final class TestTSSubQuery {
     assertEquals(Aggregators.SUM, sub.aggregator());
     assertEquals(Aggregators.AVG, sub.downsampler());
     assertEquals(300000, sub.downsampleInterval());
+    assertEquals(Long.MAX_VALUE, sub.interpolationTimeLimitMillis());
   }
-  
+
   @Test
   public void validateNoDS() {
     TSSubQuery sub = getMetricForValidate();
@@ -112,7 +114,41 @@ public final class TestTSSubQuery {
     sub.setDownsample("bad");
     sub.validateAndSetQuery();
   }
-  
+
+  @Test
+  public void validateMetricSubQuery_interpolationTimeLimit() {
+    TSSubQuery sub = getMetricForValidate();
+    sub.setInterpolationTimeLimit("itl-7m");
+    assertEquals("itl-7m", sub.getInterpolationTimeLimit());
+    sub.validateAndSetQuery();
+    assertEquals("sys.cpu.0", sub.getMetric());
+    assertEquals("*", sub.getTags().get("host"));
+    assertEquals("lga", sub.getTags().get("dc"));
+    assertEquals(Aggregators.SUM, sub.aggregator());
+    assertEquals(Aggregators.AVG, sub.downsampler());
+    assertEquals(300000, sub.downsampleInterval());
+    assertEquals(420000, sub.interpolationTimeLimitMillis());
+  }
+
+  @Test
+  public void validateTsuid_interpolationTimeLimit() {
+    TSSubQuery sub = getMetricForValidate();
+    sub.setMetric(null);
+    sub.setInterpolationTimeLimit("itl-7m");
+    assertEquals("itl-7m", sub.getInterpolationTimeLimit());
+    ArrayList<String> tsuids = new ArrayList<String>(1);
+    tsuids.add("ABCD");
+    sub.setTsuids(tsuids);
+    sub.validateAndSetQuery();
+    assertNotNull(sub.getTsuids());
+    assertEquals("*", sub.getTags().get("host"));
+    assertEquals("lga", sub.getTags().get("dc"));
+    assertEquals(Aggregators.SUM, sub.aggregator());
+    assertEquals(Aggregators.AVG, sub.downsampler());
+    assertEquals(300000, sub.downsampleInterval());
+    assertEquals(420000, sub.interpolationTimeLimitMillis());
+  }
+
   /**
    * Sets up an object with good, common values for testing the validation
    * function with an "m" type query (no tsuids). Each test can "set" the 

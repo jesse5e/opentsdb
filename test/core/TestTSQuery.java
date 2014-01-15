@@ -14,9 +14,12 @@ package net.opentsdb.core;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
-import java.util.ArrayList;
+import java.io.IOException;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -25,7 +28,7 @@ import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 
 @RunWith(PowerMockRunner.class)
-@PrepareForTest({ TSQuery.class })
+@PrepareForTest({ TSQuery.class, TSDB.class })
 public final class TestTSQuery {
 
   @Test
@@ -90,25 +93,56 @@ public final class TestTSQuery {
   
   @Test (expected = IllegalArgumentException.class)
   public void validateNullQueries() {
-    TSQuery q = this.getMetricForValidate();
-    q.setQueries(null);
-    q.validateAndSetQuery();
+    final TSQuery query = new TSQuery();
+    query.setStart("1356998400");
+    query.setEnd("1356998460");
+    query.validateAndSetQuery();
   }
-  
-  @Test (expected = IllegalArgumentException.class)
-  public void validateEmptyQueries() {
+
+  @Test
+  public void testBuildQueries() throws IOException {
     TSQuery q = this.getMetricForValidate();
-    q.setQueries(new ArrayList<TSSubQuery>());
+    TSSubQuery sub = q.getQueries().get(0);
     q.validateAndSetQuery();
+    TSDB mockTsdb = PowerMockito.mock(TSDB.class);
+    Query mockQuery = mock(Query.class);
+    when(mockTsdb.newQuery()).thenReturn(mockQuery);
+    Query[] returnedQueries = q.buildQueries(mockTsdb);
+    assertEquals(1, returnedQueries.length);
+    assertSame(mockQuery, returnedQueries[0]);
+    verify(mockQuery).setStartTime(1356998400000L);
+    verify(mockQuery).setEndTime(1356998460000L);
+    verify(mockQuery).downsample(300000, sub.downsampler());
+    verify(mockQuery).setTimeSeries("sys.cpu.0", sub.getTags(),
+                                    sub.aggregator(), sub.getRate());
+    verify(mockQuery).setInterpolationTimeLimit(Long.MAX_VALUE);
   }
-  
+
+  @Test
+  public void testBuildQueries__interpolationTimeLimit() throws IOException {
+    TSQuery q = this.getMetricForValidate();
+    TSSubQuery sub = q.getQueries().get(0);
+    sub.setInterpolationTimeLimit("itl-7m");
+    q.validateAndSetQuery();
+    TSDB mockTsdb = PowerMockito.mock(TSDB.class);
+    Query mockQuery = mock(Query.class);
+    when(mockTsdb.newQuery()).thenReturn(mockQuery);
+    Query[] returnedQueries = q.buildQueries(mockTsdb);
+    assertEquals(1, returnedQueries.length);
+    assertSame(mockQuery, returnedQueries[0]);
+    verify(mockQuery).setStartTime(1356998400000L);
+    verify(mockQuery).setEndTime(1356998460000L);
+    verify(mockQuery).downsample(300000, sub.downsampler());
+    verify(mockQuery).setTimeSeries("sys.cpu.0", sub.getTags(),
+                                    sub.aggregator(), sub.getRate());
+    verify(mockQuery).setInterpolationTimeLimit(420000);
+  }
+
   private TSQuery getMetricForValidate() {
     final TSQuery query = new TSQuery();
     query.setStart("1356998400");
     query.setEnd("1356998460");
-    final ArrayList<TSSubQuery> subs = new ArrayList<TSSubQuery>(1);
-    subs.add(TestTSSubQuery.getMetricForValidate());
-    query.setQueries(subs);
+    query.addSubQuery(TestTSSubQuery.getMetricForValidate());
     return query;
   }
 }

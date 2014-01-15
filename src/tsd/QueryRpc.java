@@ -201,7 +201,45 @@ final class QueryRpc implements HttpRpc {
     }
     return data_query;
   }
-  
+
+  /**
+   * Parses aggregator query parameters and constructs a {@link TSSubQuery}.
+   * @param tokens An array of tokens.
+   * @return A TSSubQuery instance
+   * @throws BadRequestException if there is no tokens or any unknown token.
+   */
+  static private TSSubQuery parseAggregatorParam(final String[] tokens) {
+    // Aggregator syntax = agg:[itl-interval:][interval-agg:][rate:]
+    // where the parts in square brackets `[' .. `]' are optional.
+    // agg is the name of an aggregation function. See {@link Aggregators}.
+    // itl-interval is a time limit of interpolation. See {@link TSSubQuery}.
+    // interval-agg is a downsample interval and a downsample function.
+    // rate is a flag to enable change rate calculation of time series data.
+    if (tokens.length == 0) {
+      throw new BadRequestException("Not enough parameters for aggregator");
+    }
+    final TSSubQuery subQuery = new TSSubQuery();
+    subQuery.setAggregator(tokens[0]);
+    // Parse out the rate and downsampler.
+    for (String token: Arrays.copyOfRange(tokens, 1, tokens.length)) {
+      if (token.toLowerCase().startsWith("rate")) {
+        subQuery.setRate(true);
+        if (token.indexOf("{") >= 0) {
+          subQuery.setRateOptions(QueryRpc.parseRateOptions(true, token));
+        }
+      } else if (token.toLowerCase().startsWith(
+          TSSubQuery.PREFIX_INTERPOLATION_TIME_LIMIT)) {
+        subQuery.setInterpolationTimeLimit(token);
+      } else if (Character.isDigit(token.charAt(0))) {
+        subQuery.setDownsample(token);
+      } else {
+        throw new BadRequestException(
+            String.format("Unknown parameter '%s' for aggregator", token));
+      }
+    }
+    return subQuery;
+  }
+
   /**
    * Parses a query string "m=..." type query and adds it to the TSQuery.
    * This will generate a TSSubQuery and add it to the TSQuery if successful
@@ -218,7 +256,7 @@ final class QueryRpc implements HttpRpc {
     }
     
     // m is of the following forms:
-    // agg:[interval-agg:][rate:]metric[{tag=value,...}]
+    // agg:[itl-interval:][interval-agg:][rate:]metric[{tag=value,...}]
     // where the parts in square brackets `[' .. `]' are optional.
     final String[] parts = Tags.splitString(query_string, ':');
     int i = parts.length;
@@ -226,35 +264,15 @@ final class QueryRpc implements HttpRpc {
       throw new BadRequestException("Invalid parameter m=" + query_string + " ("
           + (i < 2 ? "not enough" : "too many") + " :-separated parts)");
     }
-    final TSSubQuery sub_query = new TSSubQuery();
-    
-    // the aggregator is first
-    sub_query.setAggregator(parts[0]);
-    
-    i--; // Move to the last part (the metric name).
+    final TSSubQuery subQuery = parseAggregatorParam(
+        Arrays.copyOfRange(parts, 0, parts.length - 1));
+    // Copies the last part (the metric name and tags).
     HashMap<String, String> tags = new HashMap<String, String>();
-    sub_query.setMetric(Tags.parseWithMetric(parts[i], tags));
-    sub_query.setTags(tags);
-    
-    // parse out the rate and downsampler 
-    for (int x = 1; x < parts.length - 1; x++) {
-      if (parts[x].toLowerCase().startsWith("rate")) {
-        sub_query.setRate(true);
-        if (parts[x].indexOf("{") >= 0) {
-          sub_query.setRateOptions(QueryRpc.parseRateOptions(true, parts[x]));
-        }
-      } else if (Character.isDigit(parts[x].charAt(0))) {
-        sub_query.setDownsample(parts[x]);
-      }
-    }
-    
-    if (data_query.getQueries() == null) {
-      final ArrayList<TSSubQuery> subs = new ArrayList<TSSubQuery>(1);
-      data_query.setQueries(subs);
-    }
-    data_query.getQueries().add(sub_query);
+    subQuery.setMetric(Tags.parseWithMetric(parts[parts.length - 1], tags));
+    subQuery.setTags(tags);
+    data_query.addSubQuery(subQuery);
   }
-  
+
   /**
    * Parses a "tsuid=..." type query and adds it to the TSQuery.
    * This will generate a TSSubQuery and add it to the TSQuery if successful
@@ -269,43 +287,22 @@ final class QueryRpc implements HttpRpc {
     if (query_string == null || query_string.isEmpty()) {
       throw new BadRequestException("The tsuid query string was empty");
     }
-    
+
     // tsuid queries are of the following forms:
-    // agg:[interval-agg:][rate:]tsuid[,s]
+    // agg:[itl-interval:][interval-agg:][rate:]tsuid[,s]
     // where the parts in square brackets `[' .. `]' are optional.
     final String[] parts = Tags.splitString(query_string, ':');
     int i = parts.length;
     if (i < 2 || i > 5) {
-      throw new BadRequestException("Invalid parameter m=" + query_string + " ("
-          + (i < 2 ? "not enough" : "too many") + " :-separated parts)");
+      throw new BadRequestException("Invalid parameter tsuid=" +
+          query_string + " (" + (i < 2 ? "not enough" : "too many") +
+          " :-separated parts)");
     }
-    
-    final TSSubQuery sub_query = new TSSubQuery();
-    
-    // the aggregator is first
-    sub_query.setAggregator(parts[0]);
-    
-    i--; // Move to the last part (the metric name).
-    final List<String> tsuid_array = Arrays.asList(parts[i].split(","));
-    sub_query.setTsuids(tsuid_array);
-    
-    // parse out the rate and downsampler 
-    for (int x = 1; x < parts.length - 1; x++) {
-      if (parts[x].toLowerCase().startsWith("rate")) {
-        sub_query.setRate(true);
-        if (parts[x].indexOf("{") >= 0) {
-          sub_query.setRateOptions(QueryRpc.parseRateOptions(true, parts[x]));
-        }
-      } else if (Character.isDigit(parts[x].charAt(0))) {
-        sub_query.setDownsample(parts[x]);
-      }
-    }
-    
-    if (data_query.getQueries() == null) {
-      final ArrayList<TSSubQuery> subs = new ArrayList<TSSubQuery>(1);
-      data_query.setQueries(subs);
-    }
-    data_query.getQueries().add(sub_query);
+    final TSSubQuery subQuery = parseAggregatorParam(
+        Arrays.copyOfRange(parts, 0, parts.length - 1));
+    // Copies the last part (tsuids).
+    subQuery.setTsuids(Arrays.asList(parts[parts.length - 1].split(",")));
+    data_query.addSubQuery(subQuery);
   }
   
   /**

@@ -21,6 +21,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 
@@ -50,6 +53,8 @@ import net.opentsdb.meta.Annotation;
  * iterator when using the {@link Span.DownsamplingIterator}.
  */
 final class SpanGroup implements DataPoints {
+
+  private static final Logger LOG = LoggerFactory.getLogger(SpanGroup.class);
 
   // TODO: Make it configurable.
   /** Interval to fix underlying timeseries for downsampling. */
@@ -90,6 +95,13 @@ final class SpanGroup implements DataPoints {
   private final Aggregator aggregator;
 
   /**
+   * Interpolation time limit. An interpolated data point will be
+   * dropped while aggregating data points of spans if the time gap of
+   * two end-points for the interpolation is bigger than the time limit.
+   */
+  private long interpolationTimeLimitMillis = Long.MAX_VALUE;
+
+  /**
    * Downsampling function to use, if any (can be {@code null}).
    * If this is non-null, {@code sample_interval} must be strictly positive.
    */
@@ -100,7 +112,6 @@ final class SpanGroup implements DataPoints {
 
   /**
    * Ctor.
-   * @param tsdb The TSDB we belong to.
    * @param start_time Any data point strictly before this timestamp will be
    * ignored.
    * @param end_time Any data point strictly after this timestamp will be
@@ -114,20 +125,19 @@ final class SpanGroup implements DataPoints {
    * @param downsampler Aggregation function to use to group data points
    * within an interval.
    */
-  SpanGroup(final TSDB tsdb,
-            final long start_time, final long end_time,
+  SpanGroup(final long start_time, final long end_time,
             final Iterable<Span> spans,
             final boolean rate,
             final Aggregator aggregator,
-            final int interval, final Aggregator downsampler) {
-    this(tsdb, start_time, end_time, spans, rate, new RateOptions(false,
+            final int interval, final Aggregator downsampler,
+            final long interpolationTimeLimitMillis) {
+    this(start_time, end_time, spans, rate, new RateOptions(false,
         Long.MAX_VALUE, RateOptions.DEFAULT_RESET_VALUE), aggregator, interval,
-        downsampler);
+        downsampler, interpolationTimeLimitMillis);
   }
 
   /**
    * Ctor.
-   * @param tsdb The TSDB we belong to.
    * @param start_time Any data point strictly before this timestamp will be
    * ignored.
    * @param end_time Any data point strictly after this timestamp will be
@@ -143,12 +153,12 @@ final class SpanGroup implements DataPoints {
    * within an interval.
    * @since 2.0
    */
-  SpanGroup(final TSDB tsdb,
-            final long start_time, final long end_time,
+  SpanGroup(final long start_time, final long end_time,
             final Iterable<Span> spans,
             final boolean rate, final RateOptions rate_options,
             final Aggregator aggregator,
-            final int interval, final Aggregator downsampler) {
+            final int interval, final Aggregator downsampler,
+            final long interpolationTimeLimitMillis) {
      this.start_time = (start_time & Const.SECOND_MASK) == 0 ? 
          start_time * 1000 : start_time;
      this.end_time = (end_time & Const.SECOND_MASK) == 0 ? 
@@ -161,6 +171,7 @@ final class SpanGroup implements DataPoints {
      this.rate = rate;
      this.rate_options = rate_options;
      this.aggregator = aggregator;
+     this.interpolationTimeLimitMillis = interpolationTimeLimitMillis;
      this.downsampler = downsampler;
      this.sample_interval = interval;
   }
@@ -764,6 +775,7 @@ final class SpanGroup implements DataPoints {
      * @param i The index in {@link #iterators} of the iterator.
      */
     private void moveToNext(final int i) {
+      // TODO: Move to the next valid rate considering interpolation time limit.
       final int next = iterators.length + i;
       timestamps[i] = timestamps[next];
       values[i] = values[next];
@@ -852,6 +864,47 @@ final class SpanGroup implements DataPoints {
     }
 
     /**
+     * Checks if the values of the given iterator should be aggregated.
+     * @param itrIdx index into timestamps for an iterator
+     * @return true if the iterator value should be aggregated.
+     */
+    private boolean shouldAggregate(int itrIdx) {
+      if (timestamps[itrIdx] == 0) {
+        // Should *NOT* aggregate the span that has no more datapoint.
+        // The timestamp zero is the end mark of a span.
+        return false;
+      }
+      final long t0 = timestamps[itrIdx] & TIME_MASK;
+      final long t1 = timestamps[itrIdx + iterators.length] & TIME_MASK;
+      final long currentTimestamp = timestamps[current] & TIME_MASK;
+      if ((currentTimestamp == t0) || (currentTimestamp == t1)) {
+        // Should aggregate the value of the current timestamp.
+        return true;
+      }
+      // Interpolation happens between the current and next data points of
+      // a span.
+      if (t1 <= t0) {
+        // Should *NOT* aggregate if no valid interpolation can be calculated.
+        return false;
+      }
+      if (currentTimestamp < t0 || currentTimestamp > t1) {
+        // Should *NOT* aggregate if currentTimestamp is not in the range
+        // of t0 and t1.
+        LOG.warn(String.format("Current timestamp (%d) is not in the range " +
+                               "of %d and %d", currentTimestamp, t0, t1));
+        return false;
+      }
+      if ((t1 - t0) <= interpolationTimeLimitMillis) {
+        // Should aggregate the interpolated data point of data points
+        // close enough together in time.
+        return true;
+      }
+      // Should *NOT* aggregate the interpolated data point that are *NOT*
+      // close enough together.
+      return false;
+    }
+
+    /**
      * Returns whether or not there are more values to aggregate.
      * @param update_pos Whether or not to also move the internal pointer
      * {@link #pos} to the index of the next value to aggregate.
@@ -860,7 +913,7 @@ final class SpanGroup implements DataPoints {
     private boolean hasNextValue(boolean update_pos) {
       final int size = iterators.length;
       for (int i = pos + 1; i < size; i++) {
-        if (timestamps[i] != 0) {
+        if (shouldAggregate(i)) {
           //LOG.debug("hasNextValue -> true #" + i);
           if (update_pos) {
             pos = i;

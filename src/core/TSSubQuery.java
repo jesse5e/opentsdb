@@ -38,9 +38,22 @@ import net.opentsdb.utils.DateTime;
  * @since 2.0
  */
 public final class TSSubQuery {
+
+  public static final String PREFIX_INTERPOLATION_TIME_LIMIT = "itl-";
+
   /** User given name of an aggregation function to use */
   private String aggregator;
-  
+
+  /**
+   * Interpolation time limit. An interpolated data point will be
+   * dropped while aggregating data points of spans if the time gap of
+   * two end-points for the interpolation is bigger than the time limit.
+   */
+  private String interpolationTimeLimit;
+
+  /** Interpolation time limit in milliseconds */
+  private long interpolationTimeLimitMillis = Long.MAX_VALUE;
+
   /** User given name for a metric, e.g. "sys.cpu.0" */
   private String metric;
   
@@ -162,13 +175,43 @@ public final class TSSubQuery {
       downsample_interval = DateTime.parseDuration(
           downsample.substring(0, dash));
     }
+    parseInterpolationTimeLimit();
+  }
+
+  /**
+   * Parses interpolation time limit.
+   * @throws IllegalArgumentException if we failed to parse.
+   */
+  private void parseInterpolationTimeLimit() {
+    if (interpolationTimeLimit == null || interpolationTimeLimit.isEmpty()) {
+      return;
+    }
+    if (!interpolationTimeLimit.startsWith(PREFIX_INTERPOLATION_TIME_LIMIT)) {
+      throw new IllegalArgumentException(
+          String.format("Invalid interpolation time limit specifier '%s'",
+              interpolationTimeLimit));
+    }
+    try {
+      String itl = interpolationTimeLimit.substring(
+          PREFIX_INTERPOLATION_TIME_LIMIT.length());
+      interpolationTimeLimitMillis = DateTime.parseDuration(itl);
+    } catch (IllegalArgumentException ignored) {
+      throw new IllegalArgumentException(
+          String.format("Invalid interpolation time limit specifier '%s' - " +
+                        "error in time format", interpolationTimeLimit));
+    }
   }
 
   /** @return the parsed aggregation function */
   public Aggregator aggregator() {
     return this.agg;
   }
-  
+
+  /** @return the interpolation time limit in milliseconds */
+  public long interpolationTimeLimitMillis() {
+    return this.interpolationTimeLimitMillis;
+  }
+
   /** @return the parsed downsampler aggregation function */
   public Aggregator downsampler() {
     return this.downsampler;
@@ -182,6 +225,11 @@ public final class TSSubQuery {
   /** @return the user supplied aggregator */
   public String getAggregator() {
     return aggregator;
+  }
+
+  /** @return the interpolation time limit */
+  public String getInterpolationTimeLimit() {
+    return interpolationTimeLimit;
   }
 
   /** @return the user supplied metric */
@@ -221,6 +269,11 @@ public final class TSSubQuery {
   /** @param aggregator the name of an aggregation function */
   public void setAggregator(String aggregator) {
     this.aggregator = aggregator;
+  }
+
+  /** @param interpolationTimeLimit an interpolation time limit */
+  public void setInterpolationTimeLimit(String interpolationTimeLimit) {
+    this.interpolationTimeLimit = interpolationTimeLimit;
   }
 
   /** @param metric the name of a metric to fetch */

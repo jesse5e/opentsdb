@@ -112,6 +112,13 @@ final class TsdbQuery implements Query {
   private Aggregator aggregator;
 
   /**
+   * Interpolation time limit. An interpolated data point will be
+   * dropped while aggregating data points of spans if the time gap of
+   * two end-points for the interpolation is bigger than the time limit.
+   */
+  private long interpolationTimeLimitMillis = Long.MAX_VALUE;
+
+  /**
    * Downsampling function to use, if any (can be {@code null}).
    * If this is non-null, {@code sample_interval} must be strictly positive.
    */
@@ -446,13 +453,13 @@ final class TsdbQuery implements Query {
       if (group_bys == null) {
         // We haven't been asked to find groups, so let's put all the spans
         // together in the same group.
-        final SpanGroup group = new SpanGroup(tsdb,
-                                              getScanStartTime(),
+        final SpanGroup group = new SpanGroup(getScanStartTime(),
                                               getScanEndTime(),
                                               spans.values(),
                                               rate, rate_options,
                                               aggregator,
-                                              sample_interval, downsampler);
+                                              sample_interval, downsampler,
+                                              interpolationTimeLimitMillis);
         return new SpanGroup[] { group };
       }
   
@@ -493,9 +500,10 @@ final class TsdbQuery implements Query {
         //LOG.info("Span belongs to group " + Arrays.toString(group) + ": " + Arrays.toString(row));
         SpanGroup thegroup = groups.get(group);
         if (thegroup == null) {
-          thegroup = new SpanGroup(tsdb, getScanStartTime(), getScanEndTime(),
+          thegroup = new SpanGroup(getScanStartTime(), getScanEndTime(),
                                    null, rate, rate_options, aggregator,
-                                   sample_interval, downsampler);
+                                   sample_interval, downsampler,
+                                   interpolationTimeLimitMillis);
           // Copy the array because we're going to keep `group' and overwrite
           // its contents. So we want the collection to have an immutable copy.
           final byte[] group_copy = new byte[group.length];
@@ -854,6 +862,15 @@ final class TsdbQuery implements Query {
       return a.length - b.length;
     }
 
+  }
+
+  /**
+   * Sets interpolation time limit.
+   * @param millis Interpolation time limit in millis.
+   */
+  @Override
+  public void setInterpolationTimeLimit(long millis) {
+    interpolationTimeLimitMillis = millis;
   }
 
 }

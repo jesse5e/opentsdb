@@ -152,6 +152,7 @@ public final class TSQuery {
         query.setTimeSeries(sub.getMetric(), sub.getTags(), sub.aggregator(), 
             sub.getRate());
       }
+      query.setInterpolationTimeLimit(sub.interpolationTimeLimitMillis());
       queries[i] = query;
       i++;
     }
@@ -315,14 +316,17 @@ public final class TSQuery {
   public void setShowTSUIDs(boolean show_tsuids) {
     this.show_tsuids = show_tsuids;
   }
-  
-  /** @param queries a list of {@link TSSubQuery} objects to store*/
-  public void setQueries(ArrayList<TSSubQuery> queries) {
-    this.queries = queries;
-  }
 
   /** @param ms_resolution whether or not the user wants millisecond resolution */
   public void setMsResolution(boolean ms_resolution) {
     this.ms_resolution = ms_resolution;
+  }
+
+  /** @param subQuery a sub query to add */
+  public void addSubQuery(TSSubQuery subQuery) {
+    if (queries == null) {
+      queries = new ArrayList<TSSubQuery>();
+    }
+    queries.add(subQuery);
   }
 }

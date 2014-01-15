@@ -156,6 +156,14 @@ public interface Query {
   void downsample(int interval, Aggregator downsampler);
 
   /**
+   * Sets an interpolation time limit. An interpolated data point will be
+   * dropped while aggregating data points of spans if the time gap of
+   * two end-points for the interpolation is bigger than the time limit.
+   * @param millis Interpolation time limit in milliseconds
+   */
+  void setInterpolationTimeLimit(long millis);
+
+  /**
    * Runs this query.
    * @return The data points matched by this query.
    * <p>
