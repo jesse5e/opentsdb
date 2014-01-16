@@ -125,7 +125,7 @@ final class TsdbQuery implements Query {
   private Aggregator downsampler;
 
   /** Minimum time interval (in seconds) wanted between each data point. */
-  private int sample_interval;
+  private int sample_interval_ms;
 
   /** Optional list of TSUIDs to fetch and aggregate instead of a metric */
   private List<String> tsuids;
@@ -262,7 +262,7 @@ final class TsdbQuery implements Query {
       throw new IllegalArgumentException("interval not > 0: " + interval);
     }
     this.downsampler = downsampler;
-    this.sample_interval = interval;
+    this.sample_interval_ms = interval;
   }
 
   /**
@@ -453,12 +453,12 @@ final class TsdbQuery implements Query {
       if (group_bys == null) {
         // We haven't been asked to find groups, so let's put all the spans
         // together in the same group.
-        final SpanGroup group = new SpanGroup(getScanStartTime(),
-                                              getScanEndTime(),
+        final SpanGroup group = new SpanGroup(getScanStartTimeSeconds(),
+                                              getScanEndTimeSeconds(),
                                               spans.values(),
                                               rate, rate_options,
                                               aggregator,
-                                              sample_interval, downsampler,
+                                              sample_interval_ms, downsampler,
                                               interpolationTimeLimitMillis);
         return new SpanGroup[] { group };
       }
@@ -500,9 +500,10 @@ final class TsdbQuery implements Query {
         //LOG.info("Span belongs to group " + Arrays.toString(group) + ": " + Arrays.toString(row));
         SpanGroup thegroup = groups.get(group);
         if (thegroup == null) {
-          thegroup = new SpanGroup(getScanStartTime(), getScanEndTime(),
+          thegroup = new SpanGroup(getScanStartTimeSeconds(),
+                                   getScanEndTimeSeconds(),
                                    null, rate, rate_options, aggregator,
-                                   sample_interval, downsampler,
+                                   sample_interval_ms, downsampler,
                                    interpolationTimeLimitMillis);
           // Copy the array because we're going to keep `group' and overwrite
           // its contents. So we want the collection to have an immutable copy.
@@ -537,10 +538,10 @@ final class TsdbQuery implements Query {
     // rely on having a few extra data points before & after the exact start
     // & end dates in order to do proper rate calculation or downsampling near
     // the "edges" of the graph.
-    Bytes.setInt(start_row, (int) getScanStartTime(), metric_width);
+    Bytes.setInt(start_row, (int) getScanStartTimeSeconds(), metric_width);
     Bytes.setInt(end_row, (end_time == UNSET
                            ? -1  // Will scan until the end (0xFFF...).
-                           : (int) getScanEndTime()),
+                           : (int) getScanEndTimeSeconds()),
                  metric_width);
     
     // set the metric UID based on the TSUIDs if given, or the metric UID
@@ -556,7 +557,7 @@ final class TsdbQuery implements Query {
     }
 
     final Scanner scanner = tsdb.client.newScanner(tsdb.table);
-	scanner.setMaxNumRows(1024 * 10);
+    scanner.setMaxNumRows(1024 * 10);
     scanner.setStartKey(start_row);
     scanner.setStopKey(end_row);
     if (tsuids != null && !tsuids.isEmpty()) {
@@ -569,7 +570,7 @@ final class TsdbQuery implements Query {
   }
 
   /** Returns the UNIX timestamp from which we must start scanning.  */
-  private long getScanStartTime() {
+  private long getScanStartTimeSeconds() {
     // The reason we look before by `MAX_TIMESPAN * 2' seconds is because of
     // the following.  Let's assume MAX_TIMESPAN = 600 (10 minutes) and the
     // start_time = ... 12:31:00.  If we initialize the scanner to look
@@ -587,12 +588,12 @@ final class TsdbQuery implements Query {
     if ((start & Const.SECOND_MASK) != 0) {
       start /= 1000;
     }
-    final long ts = start - Const.MAX_TIMESPAN * 2 - sample_interval;
+    final long ts = start - Const.MAX_TIMESPAN * 2 - sample_interval_ms / 1000;
     return ts > 0 ? ts : 0;
   }
 
   /** Returns the UNIX timestamp at which we must stop scanning.  */
-  private long getScanEndTime() {
+  private long getScanEndTimeSeconds() {
     // For the end_time, we have a different problem.  For instance if our
     // end_time = ... 12:30:00, we'll stop scanning when we get to 12:40, but
     // once again we wanna try to look ahead one more row, so to avoid this
@@ -605,7 +606,7 @@ final class TsdbQuery implements Query {
     if ((end & Const.SECOND_MASK) != 0) {
       end /= 1000;
     }
-    return end + Const.MAX_TIMESPAN + 1 + sample_interval;
+    return end + Const.MAX_TIMESPAN + 1 + sample_interval_ms / 1000;
   }
 
   /**
@@ -873,4 +874,19 @@ final class TsdbQuery implements Query {
     interpolationTimeLimitMillis = millis;
   }
 
+  /** Helps unit tests inspect private methods. */
+  public static class ForTesting {
+
+    public static long getScanStartTimeSeconds(TsdbQuery query) {
+      return query.getScanStartTimeSeconds();
+    }
+
+    public static long getScanEndTimeSeconds(TsdbQuery query) {
+      return query.getScanEndTimeSeconds();
+    }
+
+    public static long getDownsampleIntervalMs(TsdbQuery query) {
+      return query.sample_interval_ms;
+    }
+  }
 }
