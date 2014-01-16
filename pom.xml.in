@@ -60,8 +60,8 @@
   <packaging>jar</packaging>
 
   <build>
-    <sourceDirectory>src</sourceDirectory>
-    <testSourceDirectory>test</testSourceDirectory>
+    <sourceDirectory>src-main</sourceDirectory>
+    <testSourceDirectory>src-test</testSourceDirectory>
 
     <plugins>
 
@@ -74,12 +74,8 @@
           <target>1.6</target>
           <compilerArgument>-Xlint</compilerArgument>
           <excludes>
-            <exclude>**/Test*.java</exclude>
             <exclude>**/client/*.java</exclude>
           </excludes>
-          <testIncludes>
-            <include>**/Test*.java</include>
-          </testIncludes>
         </configuration>
       </plugin>
 
