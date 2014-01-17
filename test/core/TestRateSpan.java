@@ -133,7 +133,30 @@ public class TestRateSpan {
   }
 
   @Test
-  public void testMoveToNextRate_duplicatedTimestamp() {
+  public void testMoveToNextRate_discardDuplicatedTimestamp() {
+    source = SeekableViewsForTest.fromArray(new DataPoint[] {
+        MutableDataPoint.ofLongValue(1356998400000L, 40),
+        MutableDataPoint.ofLongValue(1356998400000L + 2000000, 50),
+        MutableDataPoint.ofLongValue(1356998400000L + 2000000, 50),
+        MutableDataPoint.ofLongValue(1356998400000L + 3000000, 150)
+    });
+    RateSpan rateSpan = new RateSpan(source, options);
+    assertTrue(rateSpan.hasNext());
+    DataPoint dp = rateSpan.next();
+    assertFalse(dp.isInteger());
+    assertEquals(1356998400000L + 2000000, dp.timestamp());
+    assertEquals(10.0 / 2000.0, dp.doubleValue(), 0);
+    assertTrue(rateSpan.hasNext());
+    // Discards the rate of duplicated timestamps.
+    dp = rateSpan.next();
+    assertFalse(dp.isInteger());
+    assertEquals(1356998400000L + 3000000, dp.timestamp());
+    assertEquals(100.0 / 1000.0, dp.doubleValue(), 0);
+    assertFalse(rateSpan.hasNext());
+  }
+
+  @Test
+  public void testMoveToNextRate_keepDuplicatedLastTimestamp() {
     source = SeekableViewsForTest.fromArray(new DataPoint[] {
         MutableDataPoint.ofLongValue(1356998400000L, 40),
         MutableDataPoint.ofLongValue(1356998400000L + 2000000, 50),
@@ -146,12 +169,59 @@ public class TestRateSpan {
     assertEquals(1356998400000L + 2000000, dp.timestamp());
     assertEquals(10.0 / 2000.0, dp.doubleValue(), 0);
     assertTrue(rateSpan.hasNext());
-    // Repeats the previous rate if the next data point is actually older
-    // than the previous one.
+    // Repeats the previous rate if the last data point is duplicated one.
     dp = rateSpan.next();
     assertFalse(dp.isInteger());
     assertEquals(1356998400000L + 2000000, dp.timestamp());
     assertEquals(10.0 / 2000.0, dp.doubleValue(), 0);
+    assertFalse(rateSpan.hasNext());
+  }
+
+  @Test
+  public void testMoveToNextRate_timeSpanLimit() {
+    source = SeekableViewsForTest.fromArray(new DataPoint[] {
+        MutableDataPoint.ofLongValue(1356998400000L, 40),
+        MutableDataPoint.ofLongValue(1356998400000L + 2000000, 50),
+        MutableDataPoint.ofLongValue(1356998400000L + 3000000, 60),
+        MutableDataPoint.ofLongValue(1356998400000L + 6000000, 80),
+        MutableDataPoint.ofLongValue(1356998400000L + 8000000, 110)
+    });
+    RateSpan rateSpan = new RateSpan(source, options, 1500000, Long.MAX_VALUE);
+    assertTrue(rateSpan.hasNext());
+    DataPoint dp = rateSpan.next();
+    assertFalse(dp.isInteger());
+    assertEquals(1356998400000L + 3000000, dp.timestamp());
+    assertEquals(10.0 /1000.0, dp.doubleValue(), 0);
+    assertTrue(rateSpan.hasNext());
+    // The last rate is available even if it is not a valid one.
+    dp = rateSpan.next();
+    assertFalse(dp.isInteger());
+    assertEquals(1356998400000L + 8000000, dp.timestamp());
+    assertEquals(30.0 / 2000.0, dp.doubleValue(), 0);
+    assertFalse(rateSpan.hasNext());
+  }
+
+  @Test
+  public void testMoveToNextRate_endTime() {
+    source = SeekableViewsForTest.fromArray(new DataPoint[] {
+        MutableDataPoint.ofLongValue(1356990000000L, 30),
+        MutableDataPoint.ofLongValue(1356990000000L + 2000000, 50),
+        MutableDataPoint.ofLongValue(1356990000000L + 3000000, 60),
+        MutableDataPoint.ofLongValue(1356990000000L + 6000000, 80),
+        MutableDataPoint.ofLongValue(1356990000000L + 8000000, 110)
+    });
+    RateSpan rateSpan = new RateSpan(source, options, 5000000, 1356992500000L);
+    assertTrue(rateSpan.hasNext());
+    DataPoint dp = rateSpan.next();
+    assertFalse(dp.isInteger());
+    assertEquals(1356992000000L, dp.timestamp());
+    assertEquals(20.0 /2000.0, dp.doubleValue(), 0);
+    assertTrue(rateSpan.hasNext());
+    // The last rate is one data point after the endTime.
+    dp = rateSpan.next();
+    assertFalse(dp.isInteger());
+    assertEquals(1356993000000L, dp.timestamp());
+    assertEquals(10.0 / 1000.0, dp.doubleValue(), 0);
     assertFalse(rateSpan.hasNext());
   }
 

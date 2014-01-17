@@ -13,7 +13,6 @@
 package net.opentsdb.core;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -60,7 +59,6 @@ import com.stumbleupon.async.Deferred;
  * of the unit tests here that deal with actual data. This includes:
  * - queries
  * - aggregations
- * - rate conversion
  * - downsampling
  * - compactions (read and write)
  */
@@ -426,48 +424,6 @@ public final class TestTsdbQuery {
     }
     assertEquals(300, dps[1].size());
   }
-  
-  @Test
-  public void runLongSingleTSRate() throws Exception {
-    storeLongTimeSeriesSeconds(true, false);;
-    HashMap<String, String> tags = new HashMap<String, String>(1);
-    tags.put("host", "web01");
-    query.setStartTime(1356998400);
-    query.setEndTime(1357041600);
-    query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM, true);
-    final DataPoints[] dps = query.run();
-    assertNotNull(dps);
-    assertEquals("sys.cpu.user", dps[0].metricName());
-    assertTrue(dps[0].getAggregatedTags().isEmpty());
-    assertNull(dps[0].getAnnotations());
-    assertEquals("web01", dps[0].getTags().get("host"));
-    
-    for (DataPoint dp : dps[0]) {
-      assertEquals(0.033F, dp.doubleValue(), 0.001);
-    }
-    assertEquals(299, dps[0].size());
-  }
-  
-  @Test
-  public void runLongSingleTSRateMs() throws Exception {
-    storeLongTimeSeriesMs();
-    HashMap<String, String> tags = new HashMap<String, String>(1);
-    tags.put("host", "web01");
-    query.setStartTime(1356998400);
-    query.setEndTime(1357041600);
-    query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM, true);
-    final DataPoints[] dps = query.run();
-    assertNotNull(dps);
-    assertEquals("sys.cpu.user", dps[0].metricName());
-    assertTrue(dps[0].getAggregatedTags().isEmpty());
-    assertNull(dps[0].getAnnotations());
-    assertEquals("web01", dps[0].getTags().get("host"));
-    
-    for (DataPoint dp : dps[0]) {
-      assertEquals(2.0F, dp.doubleValue(), 0.001);
-    }
-    assertEquals(299, dps[0].size());
-  }
 
   @Test
   public void runLongSingleTSCompacted() throws Exception {
@@ -636,48 +592,6 @@ public final class TestTsdbQuery {
       value -= 0.25d;
     }
     assertEquals(300, dps[1].size());
-  }
-  
-  @Test
-  public void runFloatSingleTSRate() throws Exception {
-    storeFloatTimeSeriesSeconds(true, false);
-    HashMap<String, String> tags = new HashMap<String, String>(1);
-    tags.put("host", "web01");
-    query.setStartTime(1356998400);
-    query.setEndTime(1357041600);
-    query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM, true);
-    final DataPoints[] dps = query.run();
-    assertNotNull(dps);
-    assertEquals("sys.cpu.user", dps[0].metricName());
-    assertTrue(dps[0].getAggregatedTags().isEmpty());
-    assertNull(dps[0].getAnnotations());
-    assertEquals("web01", dps[0].getTags().get("host"));
-    
-    for (DataPoint dp : dps[0]) {
-      assertEquals(0.00833F, dp.doubleValue(), 0.00001);
-    }
-    assertEquals(299, dps[0].size());
-  }
-  
-  @Test
-  public void runFloatSingleTSRateMs() throws Exception {
-    storeFloatTimeSeriesMs();
-    HashMap<String, String> tags = new HashMap<String, String>(1);
-    tags.put("host", "web01");
-    query.setStartTime(1356998400);
-    query.setEndTime(1357041600);
-    query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM, true);
-    final DataPoints[] dps = query.run();
-    assertNotNull(dps);
-    assertEquals("sys.cpu.user", dps[0].metricName());
-    assertTrue(dps[0].getAggregatedTags().isEmpty());
-    assertNull(dps[0].getAnnotations());
-    assertEquals("web01", dps[0].getTags().get("host"));
-    
-    for (DataPoint dp : dps[0]) {
-      assertEquals(0.5F, dp.doubleValue(), 0.00001);
-    }
-    assertEquals(299, dps[0].size());
   }
 
   @Test
@@ -1134,95 +1048,6 @@ public final class TestTsdbQuery {
     final DataPoints[] dps = query.run();
     assertNotNull(dps);
     dps[0].metricName();
-  }
-  
-  @Test
-  public void runRateCounterDefault() throws Exception {
-    setQueryStorage();
-    HashMap<String, String> tags = new HashMap<String, String>(1);
-    tags.put("host", "web01");
-    long timestamp = 1356998400;
-    tsdb.addPoint("sys.cpu.user", timestamp += 30, Long.MAX_VALUE - 55, tags)
-      .joinUninterruptibly();
-    tsdb.addPoint("sys.cpu.user", timestamp += 30, Long.MAX_VALUE - 25, tags)
-      .joinUninterruptibly();
-    tsdb.addPoint("sys.cpu.user", timestamp += 30, 5, tags).joinUninterruptibly();
-    
-    RateOptions ro = new RateOptions(true, Long.MAX_VALUE, 0);
-    query.setStartTime(1356998400);
-    query.setEndTime(1357041600);
-    query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM, true, ro);
-    final DataPoints[] dps = query.run();
-
-    for (DataPoint dp : dps[0]) {
-      assertEquals(1.0, dp.doubleValue(), 0.001);
-    }
-    assertEquals(2, dps[0].size());
-  }
-  
-  @Test
-  public void runRateCounterDefaultNoOp() throws Exception {
-    setQueryStorage();
-    HashMap<String, String> tags = new HashMap<String, String>(1);
-    tags.put("host", "web01");
-    long timestamp = 1356998400;
-    tsdb.addPoint("sys.cpu.user", timestamp += 30, 30, tags).joinUninterruptibly();
-    tsdb.addPoint("sys.cpu.user", timestamp += 30, 60, tags).joinUninterruptibly();
-    tsdb.addPoint("sys.cpu.user", timestamp += 30, 90, tags).joinUninterruptibly();
-    
-    RateOptions ro = new RateOptions(true, Long.MAX_VALUE, 0);
-    query.setStartTime(1356998400);
-    query.setEndTime(1357041600);
-    query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM, true, ro);
-    final DataPoints[] dps = query.run();
-
-    for (DataPoint dp : dps[0]) {
-      assertEquals(1.0, dp.doubleValue(), 0.001);
-    }
-    assertEquals(2, dps[0].size());
-  }
-  
-  @Test
-  public void runRateCounterMaxSet() throws Exception {
-    setQueryStorage();
-    HashMap<String, String> tags = new HashMap<String, String>(1);
-    tags.put("host", "web01");
-    long timestamp = 1356998400;
-    tsdb.addPoint("sys.cpu.user", timestamp += 30, 45, tags).joinUninterruptibly();
-    tsdb.addPoint("sys.cpu.user", timestamp += 30, 75, tags).joinUninterruptibly();
-    tsdb.addPoint("sys.cpu.user", timestamp += 30, 5, tags).joinUninterruptibly();
-    
-    RateOptions ro = new RateOptions(true, 100, 0);
-    query.setStartTime(1356998400);
-    query.setEndTime(1357041600);
-    query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM, true, ro);
-    final DataPoints[] dps = query.run();
-
-    for (DataPoint dp : dps[0]) {
-      assertEquals(1.0, dp.doubleValue(), 0.001);
-    }
-    assertEquals(2, dps[0].size());
-  }
-  
-  @Test
-  public void runRateCounterAnomally() throws Exception {
-    setQueryStorage();
-    HashMap<String, String> tags = new HashMap<String, String>(1);
-    tags.put("host", "web01");
-    long timestamp = 1356998400;
-    tsdb.addPoint("sys.cpu.user", timestamp += 30, 45, tags).joinUninterruptibly();
-    tsdb.addPoint("sys.cpu.user", timestamp += 30, 75, tags).joinUninterruptibly();
-    tsdb.addPoint("sys.cpu.user", timestamp += 30, 25, tags).joinUninterruptibly();
-    
-    RateOptions ro = new RateOptions(true, 10000, 35);
-    query.setStartTime(1356998400);
-    query.setEndTime(1357041600);
-    query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM, true, ro);
-    final DataPoints[] dps = query.run();
-
-    assertEquals(1.0, dps[0].doubleValue(0), 0.001);
-    assertEquals(0, dps[0].doubleValue(1), 0.001);
-    assertEquals(2, dps[0].size());
   }
 
   @Test

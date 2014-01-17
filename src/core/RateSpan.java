@@ -24,6 +24,10 @@ public class RateSpan implements SeekableView {
   private final SeekableView source;
   /** Options for calculating rates. */
   private final RateOptions options;
+  /** Drops rates of time gaps bigger than the time span limit. */
+  private final long timeSpanLimitMillis;
+  /** Timestamp to end iteration. */
+  private final long endTimeMillis;
   /** The raw data point of the current timestamp. */
   private final MutableDataPoint currentData = new MutableDataPoint();
   /** The raw data point of the previous timestamp. */
@@ -40,7 +44,21 @@ public class RateSpan implements SeekableView {
    * @param options Options for calculating rates.
    */
   RateSpan(final SeekableView source, final RateOptions options) {
+    this(source, options, Long.MAX_VALUE, Long.MAX_VALUE);
+  }
+
+  /**
+   * Constructs a {@link RateSpan} instance.
+   * @param source The iterator to access the underlying data.
+   * @param options Options for calculating rates.
+   * @param timeSpanLimitMillis Limit of time span to calculate a rate.
+   * @param endTimeMillis Timestamp to end iteration
+   */
+  RateSpan(final SeekableView source, final RateOptions options,
+           final long timeSpanLimitMillis, final long endTimeMillis) {
     this.source = source;
+    this.timeSpanLimitMillis = timeSpanLimitMillis;
+    this.endTimeMillis = endTimeMillis;
     this.options = options;
   }
 
@@ -51,13 +69,21 @@ public class RateSpan implements SeekableView {
   @Override
   public boolean hasNext() {
     initializeIfNotDone();
-    return source.hasNext();
+    return currentData.timestamp() < endTimeMillis && source.hasNext();
   }
 
+  /**
+   * @return the next rate of changes.
+   * @throws NoSuchElementException if there is no more data.
+   */
   @Override
   public DataPoint next() {
     initializeIfNotDone();
-    moveToNextRate();
+    if (hasNext()) {
+      moveToNextRate();
+    } else {
+      throw new NoSuchElementException("no more values for " + toString());
+    }
     return currentRate;
   }
 
@@ -103,21 +129,25 @@ public class RateSpan implements SeekableView {
 
   /**
    * Move to the next valid rate.
-   * @throws NoSuchElementException if there is no more data.
    */
   private void moveToNextRate() {
-    if (source.hasNext()) {
+    while (hasNext()) {
       prevData.reset(currentData);
       currentData.reset(source.next());
-      long t0 = prevData.timestamp();
-      long t1 = currentData.timestamp();
-      if (t1 > t0) {
+      final long timeGap = currentData.timestamp() - prevData.timestamp();
+      if (timeGap > 0 && timeGap <= timeSpanLimitMillis) {
+        // Two points are close enough together.
         currentRate.reset(currentData.timestamp(), calculateRate());
-      } else {
-        // Just use the existing one.
+        return;
       }
+    }
+    // Serves a caller with the last rate at the end of a span even if
+    // it is not a valid rate because we promised a data when a user called
+    // hasNext before calling the next.
+    if (currentData.timestamp() > prevData.timestamp()) {
+      currentRate.reset(currentData.timestamp(), calculateRate());
     } else {
-      throw new NoSuchElementException("no more values for " + toString());
+      // Uses whatever exists.
     }
   }
 

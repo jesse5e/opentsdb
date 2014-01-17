@@ -643,7 +643,8 @@ final class SpanGroup implements DataPoints {
           it = spans.get(i).downsampler(intervalMillis, downsampler);
         }
         if (rate) {
-          it = new RateSpan(it, rate_options);
+          it = new RateSpan(it, rate_options, interpolationTimeLimitMillis,
+                            end_time);
         }
         iterators[i] = it;
         it.seek(start_time);

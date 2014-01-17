@@ -21,36 +21,43 @@ import org.junit.Ignore;
 public class SeekableViewsForTest {
 
   public static SeekableView fromArray(final DataPoint[] dataPoints) {
-    return new SeekableView() {
+    return new MockSeekableView(dataPoints);
+  }
 
-      private int index = 0;
+  public static class MockSeekableView implements SeekableView {
 
-      @Override
-      public boolean hasNext() {
-        return dataPoints.length > index;
+    private final DataPoint[] dataPoints;
+    private int index = 0;
+
+    MockSeekableView(final DataPoint[] dataPoints) {
+      this.dataPoints = dataPoints;
+    }
+
+    @Override
+    public boolean hasNext() {
+      return dataPoints.length > index;
+    }
+
+    @Override
+    public DataPoint next() {
+      if (hasNext()) {
+        return dataPoints[index++];
       }
+      throw new NoSuchElementException("no more values");
+    }
 
-      @Override
-      public DataPoint next() {
-        if (hasNext()) {
-          return dataPoints[index++];
+    @Override
+    public void remove() {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void seek(long timestamp) {
+      for (; index < dataPoints.length; ++index) {
+        if (dataPoints[index].timestamp() >= timestamp) {
+          break;
         }
-        throw new NoSuchElementException("no more values");
       }
-
-      @Override
-      public void remove() {
-        throw new UnsupportedOperationException();
-      }
-
-      @Override
-      public void seek(long timestamp) {
-        for (; index < dataPoints.length; ++index) {
-          if (dataPoints[index].timestamp() >= timestamp) {
-            break;
-          }
-        }
-      }
-    };
+    }
   }
 }

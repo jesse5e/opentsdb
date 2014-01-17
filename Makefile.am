@@ -142,12 +142,15 @@ test_SRC := \
 	test/core/TestInternal.java	\
 	test/core/TestMutableDataPoint.java	\
 	test/core/TestMutableDoubleDataPoint.java	\
+	test/core/TestRateSpan.java	\
 	test/core/TestRowSeq.java	\
 	test/core/TestSpan.java	\
 	test/core/TestTags.java	\
 	test/core/TestTSDB.java	\
 	test/core/TestTsdbQuery.java	\
+	test/core/TestTsdbQueryDownsample.java	\
 	test/core/TestTsdbQueryInterpolation.java	\
+	test/core/TestTsdbQueryRate.java	\
 	test/core/TestTSQuery.java	\
 	test/core/TestTSSubQuery.java	\
 	test/plugin/DummyPlugin.java \
