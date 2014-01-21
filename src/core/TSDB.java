@@ -619,9 +619,9 @@ public final class TSDB {
         if ((timestamp & Const.SECOND_MASK) != 0) {
           // drop the ms timestamp to seconds to calculate the base timestamp
           base_time = ((timestamp / 1000) - 
-              ((timestamp / 1000) % Const.MAX_TIMESPAN));
+              ((timestamp / 1000) % Const.MAX_TIMESPAN_SECS));
         } else {
-          base_time = (timestamp - (timestamp % Const.MAX_TIMESPAN));
+          base_time = (timestamp - (timestamp % Const.MAX_TIMESPAN_SECS));
         }
         
         Bytes.setInt(row, (int) base_time, metrics.width());

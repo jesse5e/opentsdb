@@ -39,7 +39,10 @@ import net.opentsdb.utils.DateTime;
  */
 public final class TSSubQuery {
 
+  /** Sub query option to specify the interpolation time limit. */
   public static final String PREFIX_INTERPOLATION_TIME_LIMIT = "itl-";
+  /** Sub query option to extend HBase query time range. */
+  public static final String PREFIX_HBASE_TIME_EXTENSION = "ext-";
 
   /** User given name of an aggregation function to use */
   private String aggregator;
@@ -52,7 +55,27 @@ public final class TSSubQuery {
   private String interpolationTimeLimit;
 
   /** Interpolation time limit in milliseconds */
-  private long interpolationTimeLimitMillis = Long.MAX_VALUE;
+  private long interpolationTimeLimitMillis = Const.MAX_TIMESPAN_MS;
+
+  /**
+   * Extends user query time range with the specified amount to build
+   * a HBase query.
+   */
+  private String hbaseTimeExtension;
+
+  /**
+   * Makes HBase query begin earlier than the start timestamp of a user query
+   * time range by the specified amount of time. A negative value enables
+   * the default behavior.
+   */
+  private long hbaseTimeStartExtensionMillis = -1;
+
+  /**
+   * Makes HBase query end later than the end timestamp of a user query
+   * time range by the specified amount of time. A negative value enables
+   * the default behavior.
+   */
+  private long hbaseTimeEndExtensionMillis = -1;
 
   /** User given name for a metric, e.g. "sys.cpu.0" */
   private String metric;
@@ -119,6 +142,16 @@ public final class TSSubQuery {
     }
     buf.append("], agg=")
       .append(aggregator)
+      .append(", interpolationTimeLimit='")
+      .append(interpolationTimeLimit)
+      .append("', interpolationTimeLimitMillis=")
+      .append(interpolationTimeLimitMillis)
+      .append(", hbaseTimeExtension='")
+      .append(hbaseTimeExtension)
+      .append("', hbaseTimeStartExtensionMillis=")
+      .append(hbaseTimeStartExtensionMillis)
+      .append(", hbaseTimeEndExtensionMillis=")
+      .append(hbaseTimeEndExtensionMillis)
       .append(", downsample=")
       .append(downsample)
       .append(", ds_interval=")
@@ -176,6 +209,7 @@ public final class TSSubQuery {
           downsample.substring(0, dash));
     }
     parseInterpolationTimeLimit();
+    parseHBaseTimeExtension();
   }
 
   /**
@@ -202,6 +236,41 @@ public final class TSSubQuery {
     }
   }
 
+  /**
+   * Parses HBase query time range extension.
+   * @throws IllegalArgumentException if we failed to parse.
+   */
+  private void parseHBaseTimeExtension() {
+    if (hbaseTimeExtension == null || hbaseTimeExtension.isEmpty()) {
+      return;
+    }
+    if (!hbaseTimeExtension.startsWith(PREFIX_HBASE_TIME_EXTENSION)) {
+      throw new IllegalArgumentException(
+          String.format("Invalid hbase time extension specifier '%s'",
+              hbaseTimeExtension));
+    }
+    String timeExtensions = hbaseTimeExtension.substring(
+        PREFIX_HBASE_TIME_EXTENSION.length());
+    String[] tokens = timeExtensions.split("\\.");
+    if (tokens.length > 2) {
+      throw new IllegalArgumentException(
+          String.format("Invalid hbase time extension specifier '%s' - " +
+                        "error in time format", interpolationTimeLimit));
+    }
+    try {
+      if (tokens.length > 0 && !tokens[0].isEmpty() ) {
+        hbaseTimeStartExtensionMillis = DateTime.parseDuration(tokens[0]);
+      }
+      if (tokens.length > 1 && !tokens[1].isEmpty()) {
+        hbaseTimeEndExtensionMillis = DateTime.parseDuration(tokens[1]);
+      }
+    } catch (IllegalArgumentException ignored) {
+      throw new IllegalArgumentException(
+          String.format("Invalid hbase time extension specifier '%s' - " +
+                        "error in time format", interpolationTimeLimit));
+    }
+  }
+
   /** @return the parsed aggregation function */
   public Aggregator aggregator() {
     return this.agg;
@@ -210,6 +279,16 @@ public final class TSSubQuery {
   /** @return the interpolation time limit in milliseconds */
   public long interpolationTimeLimitMillis() {
     return this.interpolationTimeLimitMillis;
+  }
+
+  /** @return HBase query start time extension amount in milliseconds */
+  public long hbaseTimeStartExtensionMillis() {
+    return this.hbaseTimeStartExtensionMillis;
+  }
+
+  /** @return HBase query end time extension amount in milliseconds */
+  public long hbaseTimeEndExtensionMillis() {
+    return this.hbaseTimeEndExtensionMillis;
   }
 
   /** @return the parsed downsampler aggregation function */
@@ -230,6 +309,11 @@ public final class TSSubQuery {
   /** @return the interpolation time limit */
   public String getInterpolationTimeLimit() {
     return interpolationTimeLimit;
+  }
+
+  /** @return the HBase time extension */
+  public String getHbaseTimeExtension() {
+    return hbaseTimeExtension;
   }
 
   /** @return the user supplied metric */
@@ -274,6 +358,11 @@ public final class TSSubQuery {
   /** @param interpolationTimeLimit an interpolation time limit */
   public void setInterpolationTimeLimit(String interpolationTimeLimit) {
     this.interpolationTimeLimit = interpolationTimeLimit;
+  }
+
+  /** @param hbaseTimeExtension HBase query time extension */
+  public void setHbaseTimeExtension(String hbaseTimeExtension) {
+    this.hbaseTimeExtension = hbaseTimeExtension;
   }
 
   /** @param metric the name of a metric to fetch */

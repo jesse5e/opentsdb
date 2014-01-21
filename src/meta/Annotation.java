@@ -328,9 +328,9 @@ public final class Annotation implements Comparable<Annotation> {
                                     Const.TIMESTAMP_BYTES];
         
         final long normalized_start = (start_time - 
-            (start_time % Const.MAX_TIMESPAN));
+            (start_time % Const.MAX_TIMESPAN_SECS));
         final long normalized_end = (end_time - 
-            (end_time % Const.MAX_TIMESPAN));
+            (end_time % Const.MAX_TIMESPAN_SECS));
         
         Bytes.setInt(start, (int) normalized_start, TSDB.metrics_width());
         Bytes.setInt(end, (int) normalized_end, TSDB.metrics_width());
@@ -477,12 +477,12 @@ public final class Annotation implements Comparable<Annotation> {
     if ((start_time & Const.SECOND_MASK) != 0) {
       // drop the ms timestamp to seconds to calculate the base timestamp
       base_time = ((start_time / 1000) - 
-          ((start_time / 1000) % Const.MAX_TIMESPAN));
+          ((start_time / 1000) % Const.MAX_TIMESPAN_SECS));
       qualifier = new byte[5];
       final int offset = (int) (start_time - (base_time * 1000));
       System.arraycopy(Bytes.fromInt(offset), 0, qualifier, 1, 4);
     } else {
-      base_time = (start_time - (start_time % Const.MAX_TIMESPAN));
+      base_time = (start_time - (start_time % Const.MAX_TIMESPAN_SECS));
       qualifier = new byte[3];
       final short offset = (short) (start_time - base_time);
       System.arraycopy(Bytes.fromShort(offset), 0, qualifier, 1, 2);
@@ -508,9 +508,9 @@ public final class Annotation implements Comparable<Annotation> {
     if ((start_time & Const.SECOND_MASK) != 0) {
       // drop the ms timestamp to seconds to calculate the base timestamp
       base_time = ((start_time / 1000) - 
-          ((start_time / 1000) % Const.MAX_TIMESPAN));
+          ((start_time / 1000) % Const.MAX_TIMESPAN_SECS));
     } else {
-      base_time = (start_time - (start_time % Const.MAX_TIMESPAN));
+      base_time = (start_time - (start_time % Const.MAX_TIMESPAN_SECS));
     }
     
     // if the TSUID is empty, then we're a global annotation. The row key will 

@@ -209,12 +209,18 @@ final class QueryRpc implements HttpRpc {
    * @throws BadRequestException if there is no tokens or any unknown token.
    */
   static private TSSubQuery parseAggregatorParam(final String[] tokens) {
-    // Aggregator syntax = agg:[itl-interval:][interval-agg:][rate:]
+    // Syntax = agg:[itl-interval:][interval-agg:][rate:][ext-nnn.mmm:]
     // where the parts in square brackets `[' .. `]' are optional.
     // agg is the name of an aggregation function. See {@link Aggregators}.
     // itl-interval is a time limit of interpolation. See {@link TSSubQuery}.
     // interval-agg is a downsample interval and a downsample function.
     // rate is a flag to enable change rate calculation of time series data.
+    // ext is to specify amount of time to extend HBase time query time range.
+    //    nnn is amount of time to make HBase query time range begin earlier
+    //        by that much. (e.g, "10s", "10m", "3h")
+    //    mmm is amount of time to make HBase query time range end later
+    //        by that much. (e.g, "10s", "10m", "3h")
+    //    '.' is the separator of nnn and mmm.
     if (tokens.length == 0) {
       throw new BadRequestException("Not enough parameters for aggregator");
     }
@@ -230,6 +236,9 @@ final class QueryRpc implements HttpRpc {
       } else if (token.toLowerCase().startsWith(
           TSSubQuery.PREFIX_INTERPOLATION_TIME_LIMIT)) {
         subQuery.setInterpolationTimeLimit(token);
+      } else if (token.toLowerCase().startsWith(
+          TSSubQuery.PREFIX_HBASE_TIME_EXTENSION)) {
+        subQuery.setHbaseTimeExtension(token);
       } else if (Character.isDigit(token.charAt(0))) {
         subQuery.setDownsample(token);
       } else {
@@ -256,11 +265,11 @@ final class QueryRpc implements HttpRpc {
     }
     
     // m is of the following forms:
-    // agg:[itl-interval:][interval-agg:][rate:]metric[{tag=value,...}]
-    // where the parts in square brackets `[' .. `]' are optional.
+    // Aggreagator_parameters:metric[{tag=value,...}]
+    // See parseAggregatorParam for Aggreagator_parameters.
     final String[] parts = Tags.splitString(query_string, ':');
     int i = parts.length;
-    if (i < 2 || i > 5) {
+    if (i < 2 || i > 6) {
       throw new BadRequestException("Invalid parameter m=" + query_string + " ("
           + (i < 2 ? "not enough" : "too many") + " :-separated parts)");
     }
@@ -289,11 +298,11 @@ final class QueryRpc implements HttpRpc {
     }
 
     // tsuid queries are of the following forms:
-    // agg:[itl-interval:][interval-agg:][rate:]tsuid[,s]
-    // where the parts in square brackets `[' .. `]' are optional.
+    // Aggreagator_parameters:tsuid[,s]
+    // See parseAggregatorParam for Aggreagator_parameters.
     final String[] parts = Tags.splitString(query_string, ':');
     int i = parts.length;
-    if (i < 2 || i > 5) {
+    if (i < 2 || i > 6) {
       throw new BadRequestException("Invalid parameter tsuid=" +
           query_string + " (" + (i < 2 ? "not enough" : "too many") +
           " :-separated parts)");

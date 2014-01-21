@@ -115,7 +115,7 @@ final class CompactionQueue extends ConcurrentSkipListMap<byte[], Boolean> {
       LOG.info("Flushing all old outstanding rows out of " + size + " rows");
     }
     final long now = System.currentTimeMillis();
-    return flush(now / 1000 - Const.MAX_TIMESPAN - 1, Integer.MAX_VALUE);
+    return flush(now / 1000 - Const.MAX_TIMESPAN_SECS - 1, Integer.MAX_VALUE);
   }
 
   /**
@@ -437,7 +437,7 @@ final class CompactionQueue extends ConcurrentSkipListMap<byte[], Boolean> {
       compacted[0] = compact;
       final long base_time = Bytes.getUnsignedInt(compact.key(), metric_width);
       final long cut_off = System.currentTimeMillis() / 1000
-        - Const.MAX_TIMESPAN - 1;
+        - Const.MAX_TIMESPAN_SECS - 1;
       if (base_time > cut_off) {  // If row is too recent...
         return null;              // ... Don't write back compacted.
       }
@@ -781,9 +781,9 @@ final class CompactionQueue extends ConcurrentSkipListMap<byte[], Boolean> {
             // for the previous hour, we'll take only 30m.  This is desirable so
             // that we evict old entries from the queue a bit faster.
             final int maxflushes = Math.max(MIN_FLUSH_THRESHOLD,
-              size * FLUSH_INTERVAL * FLUSH_SPEED / Const.MAX_TIMESPAN);
+              size * FLUSH_INTERVAL * FLUSH_SPEED / Const.MAX_TIMESPAN_SECS);
             final long now = System.currentTimeMillis();
-            flush(now / 1000 - Const.MAX_TIMESPAN - 1, maxflushes);
+            flush(now / 1000 - Const.MAX_TIMESPAN_SECS - 1, maxflushes);
             if (LOG.isDebugEnabled()) {
               final int newsize = size();
               LOG.debug("flush() took " + (System.currentTimeMillis() - now)

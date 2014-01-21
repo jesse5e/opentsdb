@@ -21,6 +21,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -116,7 +117,25 @@ final class TsdbQuery implements Query {
    * dropped while aggregating data points of spans if the time gap of
    * two end-points for the interpolation is bigger than the time limit.
    */
-  private long interpolationTimeLimitMillis = Long.MAX_VALUE;
+  private long interpolationTimeLimitMillis = Const.MAX_TIMESPAN_MS;
+
+  /**
+   * Makes HBase query begin earlier than the start timestamp of a user query
+   * time range by the specified amount of time. A negative value enables
+   * the default behavior that calculates the extension based upon other
+   * configuration values such as the interpolation and downsampling parameters
+   * and row size. See {@link TsdbQuery#getScanStartTimeSeconds}.
+   */
+  private long hbaseTimeStartExtensionMillis = -1;
+
+  /**
+   * Makes HBase query end later than the end timestamp of a user query
+   * time range by the specified amount of time. A negative value enables
+   * the default behavior that calculates the extension based upon other
+   * configuration values such as the interpolation and downsampling parameters
+   * and row size. See {@link TsdbQeury@getScanEndTimeSeconds}.
+   */
+  private long hbaseTimeEndExtensionMillis = -1;
 
   /**
    * Downsampling function to use, if any (can be {@code null}).
@@ -538,7 +557,7 @@ final class TsdbQuery implements Query {
     // rely on having a few extra data points before & after the exact start
     // & end dates in order to do proper rate calculation or downsampling near
     // the "edges" of the graph.
-    Bytes.setInt(start_row, (int) getScanStartTimeSeconds(), metric_width);
+    Bytes.setInt(start_row, (int) getHBaseScanStartTimeSeconds(), metric_width);
     Bytes.setInt(end_row, (end_time == UNSET
                            ? -1  // Will scan until the end (0xFFF...).
                            : (int) getScanEndTimeSeconds()),
@@ -571,42 +590,89 @@ final class TsdbQuery implements Query {
 
   /** Returns the UNIX timestamp from which we must start scanning.  */
   private long getScanStartTimeSeconds() {
-    // The reason we look before by `MAX_TIMESPAN * 2' seconds is because of
-    // the following.  Let's assume MAX_TIMESPAN = 600 (10 minutes) and the
-    // start_time = ... 12:31:00.  If we initialize the scanner to look
-    // only 10 minutes before, we'll start scanning at time=12:21, which will
-    // give us the row that starts at 12:30 (remember: rows are always aligned
-    // on MAX_TIMESPAN boundaries -- so in this example, on 10m boundaries).
-    // But we need to start scanning at least 1 row before, so we actually
-    // look back by twice MAX_TIMESPAN.  Only when start_time is aligned on a
-    // MAX_TIMESPAN boundary then we'll mistakenly scan back by an extra row,
-    // but this doesn't really matter.
-    // Additionally, in case our sample_interval is large, we need to look
-    // even further before/after, so use that too.
     long start = getStartTime();
     // down cast to seconds if we have a query in ms
     if ((start & Const.SECOND_MASK) != 0) {
       start /= 1000;
     }
-    final long ts = start - Const.MAX_TIMESPAN * 2 - sample_interval_ms / 1000;
-    return ts > 0 ? ts : 0;
+    long startTimeSecs = start;
+    long extensionSecs;
+    if (hbaseTimeStartExtensionMillis >= 0) {
+      // Customer override: Extends the start time by the user specified amount.
+      extensionSecs = hbaseTimeStartExtensionMillis / 1000;
+    } else {
+      // NOTE: The first value in the user requested time range is the result
+      // of the first downsampling window that could extend before the start
+      // time. To be conservative, we are adding a downsmapling interval
+      // to the amount of time to extend before the requested time range.
+      // TODO: Do not add the downsampling interval if the start time is
+      // well aligned.
+      extensionSecs = TimeUnit.MILLISECONDS.toSeconds(sample_interval_ms);
+      // NOTE: Now, we are adding an interpolation window to the extension time
+      // because the first interpolated data of the first downsampling window
+      // requires a data point in the interpolation window but out side of the
+      // first downsampling window.
+      extensionSecs += TimeUnit.MILLISECONDS.toSeconds(
+          interpolationTimeLimitMillis);
+      // NOTE: For the rate of changes, we are adding another interpolation
+      // window because we need a rate out side of the first downsampling
+      // window and a rate requires two data points. So we are adding
+      // additional interpolation time window. It is because the rates are
+      // calculated before they are consumed by SpanGroup aggregator that
+      // cannot see the original data.
+      // TODO: Remove the addition interpolation window for the rate.
+      if (rate) {
+        extensionSecs += TimeUnit.MILLISECONDS.toSeconds(
+            interpolationTimeLimitMillis);
+      }
+    }
+    startTimeSecs -= extensionSecs;
+    return startTimeSecs > 0 ? startTimeSecs : 0;
+  }
+
+  /** Returns the UNIX timestamp from which we must start scanning HBase. */
+  private long getHBaseScanStartTimeSeconds() {
+    long startTimeSecs = getScanStartTimeSeconds();
+    // Rounds down to align the start time by row key. The timestamps of
+    // row keys are multiple of Const.MAX_TIMESPAN_SECS. Instead actually
+    // dividing and multiplying Const.MAX_TIMESPAN_SECS, we just subtract
+    // Const.MAX_TIMESPAN_SECS -1 because it just makes the start time small
+    // enough to fetch the starting row but not too small to fetch one
+    // additional row before it.
+    startTimeSecs -= (Const.MAX_TIMESPAN_SECS - 1);
+    return startTimeSecs > 0 ? startTimeSecs : 0;
   }
 
   /** Returns the UNIX timestamp at which we must stop scanning.  */
   private long getScanEndTimeSeconds() {
-    // For the end_time, we have a different problem.  For instance if our
-    // end_time = ... 12:30:00, we'll stop scanning when we get to 12:40, but
-    // once again we wanna try to look ahead one more row, so to avoid this
-    // problem we always add 1 second to the end_time.  Only when the end_time
-    // is of the form HH:59:59 then we will scan ahead an extra row, but once
-    // again that doesn't really matter.
-    // Additionally, in case our sample_interval is large, we need to look
-    // even further before/after, so use that too.
     long end = getEndTime();
     if ((end & Const.SECOND_MASK) != 0) {
       end /= 1000;
     }
-    return end + Const.MAX_TIMESPAN + 1 + sample_interval_ms / 1000;
+    long endSeconds = end;
+    long extensionSecs;
+    if (hbaseTimeEndExtensionMillis >= 0) {
+      // Customer override: Extends the end time by the user specified amount.
+      extensionSecs = hbaseTimeEndExtensionMillis / 1000;
+    } else {
+      // NOTE: The last value in the user requested time range is the result
+      // of the last downsampling window that could extend after the end
+      // time. To be conservative, we are adding a downsmapling interval
+      // to the amount of time to extend after the requested time range.
+      // TODO: Do not add the downsampling interval if the end time is
+      // well aligned.
+      extensionSecs = TimeUnit.MILLISECONDS.toSeconds(sample_interval_ms);
+      // NOTE: Now, we are adding an interpolation window to the extension time
+      // to make the last interpolated data of the last downsampling window
+      // valid
+      extensionSecs += TimeUnit.MILLISECONDS.toSeconds(
+          interpolationTimeLimitMillis);
+    }
+    endSeconds += extensionSecs;
+    // Jan. 2014: The original implementation added 1 to the end time to
+    // include the data point at endSeconds, but now we made it exclusive and
+    // not including it.
+    return endSeconds;
   }
 
   /**
@@ -874,11 +940,35 @@ final class TsdbQuery implements Query {
     interpolationTimeLimitMillis = millis;
   }
 
+  /**
+   * Sets HBase query start time extension. Makes HBase query begin earlier
+   * than the start timestamp of a user query time range by the specified
+   * amount of time. A negative value enables the default behavior.
+   * @param millis HBase query start time extension in milliseconds
+   */
+  public void setHbaseTimeStartExtensionMillis(long millis) {
+    hbaseTimeStartExtensionMillis = millis;
+  }
+
+  /**
+   * Sets HBase query end time extension. Makes HBase query end later
+   * than the end timestamp of a user query time range by the specified
+   * amount of time. A negative value enables the default behavior.
+   * @param millis HBase query end time extension in milliseconds
+   */
+  public void setHbaseTimeEndExtensionMillis(long millis) {
+    hbaseTimeEndExtensionMillis = millis;
+  }
+
   /** Helps unit tests inspect private methods. */
   public static class ForTesting {
 
     public static long getScanStartTimeSeconds(TsdbQuery query) {
       return query.getScanStartTimeSeconds();
+    }
+
+    public static long getHBaseScanStartTimeSeconds(TsdbQuery query) {
+      return query.getHBaseScanStartTimeSeconds();
     }
 
     public static long getScanEndTimeSeconds(TsdbQuery query) {

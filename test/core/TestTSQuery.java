@@ -115,7 +115,9 @@ public final class TestTSQuery {
     verify(mockQuery).downsample(300000, sub.downsampler());
     verify(mockQuery).setTimeSeries("sys.cpu.0", sub.getTags(),
                                     sub.aggregator(), sub.getRate());
-    verify(mockQuery).setInterpolationTimeLimit(Long.MAX_VALUE);
+    verify(mockQuery).setInterpolationTimeLimit(Const.MAX_TIMESPAN_MS);
+    verify(mockQuery).setHbaseTimeStartExtensionMillis(-1);
+    verify(mockQuery).setHbaseTimeEndExtensionMillis(-1);
   }
 
   @Test
@@ -136,6 +138,31 @@ public final class TestTSQuery {
     verify(mockQuery).setTimeSeries("sys.cpu.0", sub.getTags(),
                                     sub.aggregator(), sub.getRate());
     verify(mockQuery).setInterpolationTimeLimit(420000);
+    verify(mockQuery).setHbaseTimeStartExtensionMillis(-1);
+    verify(mockQuery).setHbaseTimeEndExtensionMillis(-1);
+  }
+
+  @Test
+  public void testBuildQueries__hbaseTimeExtension() throws IOException {
+    TSQuery q = this.getMetricForValidate();
+    TSSubQuery sub = q.getQueries().get(0);
+    sub.setInterpolationTimeLimit("itl-7m");
+    sub.setHbaseTimeExtension("ext-3m.5s");
+    q.validateAndSetQuery();
+    TSDB mockTsdb = PowerMockito.mock(TSDB.class);
+    Query mockQuery = mock(Query.class);
+    when(mockTsdb.newQuery()).thenReturn(mockQuery);
+    Query[] returnedQueries = q.buildQueries(mockTsdb);
+    assertEquals(1, returnedQueries.length);
+    assertSame(mockQuery, returnedQueries[0]);
+    verify(mockQuery).setStartTime(1356998400000L);
+    verify(mockQuery).setEndTime(1356998460000L);
+    verify(mockQuery).downsample(300000, sub.downsampler());
+    verify(mockQuery).setTimeSeries("sys.cpu.0", sub.getTags(),
+                                    sub.aggregator(), sub.getRate());
+    verify(mockQuery).setInterpolationTimeLimit(420000);
+    verify(mockQuery).setHbaseTimeStartExtensionMillis(180000);
+    verify(mockQuery).setHbaseTimeEndExtensionMillis(5000);
   }
 
   private TSQuery getMetricForValidate() {

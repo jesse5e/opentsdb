@@ -38,7 +38,7 @@ public final class TestTSSubQuery {
     assertEquals(Aggregators.SUM, sub.aggregator());
     assertEquals(Aggregators.AVG, sub.downsampler());
     assertEquals(300000, sub.downsampleInterval());
-    assertEquals(Long.MAX_VALUE, sub.interpolationTimeLimitMillis());
+    assertEquals(Const.MAX_TIMESPAN_MS, sub.interpolationTimeLimitMillis());
   }
 
   @Test
@@ -55,7 +55,7 @@ public final class TestTSSubQuery {
     assertEquals(Aggregators.SUM, sub.aggregator());
     assertEquals(Aggregators.AVG, sub.downsampler());
     assertEquals(300000, sub.downsampleInterval());
-    assertEquals(Long.MAX_VALUE, sub.interpolationTimeLimitMillis());
+    assertEquals(Const.MAX_TIMESPAN_MS, sub.interpolationTimeLimitMillis());
   }
 
   @Test
@@ -147,6 +147,72 @@ public final class TestTSSubQuery {
     assertEquals(Aggregators.AVG, sub.downsampler());
     assertEquals(300000, sub.downsampleInterval());
     assertEquals(420000, sub.interpolationTimeLimitMillis());
+  }
+
+  @Test
+  public void validateMetricSubQuery_hbaseTimeExtension() {
+    TSSubQuery sub = getMetricForValidate();
+    sub.setHbaseTimeExtension("ext-10m.7m");
+    assertEquals("ext-10m.7m", sub.getHbaseTimeExtension());
+    sub.validateAndSetQuery();
+    assertEquals("sys.cpu.0", sub.getMetric());
+    assertEquals("*", sub.getTags().get("host"));
+    assertEquals("lga", sub.getTags().get("dc"));
+    assertEquals(Aggregators.SUM, sub.aggregator());
+    assertEquals(Aggregators.AVG, sub.downsampler());
+    assertEquals(300000, sub.downsampleInterval());
+    assertEquals(600000, sub.hbaseTimeStartExtensionMillis());
+    assertEquals(420000, sub.hbaseTimeEndExtensionMillis());
+  }
+
+  @Test
+  public void validateTsuid_hbaseTimeExtension() {
+    TSSubQuery sub = getMetricForValidate();
+    sub.setMetric(null);
+    sub.setHbaseTimeExtension("ext-10m.7m");
+    assertEquals("ext-10m.7m", sub.getHbaseTimeExtension());
+    ArrayList<String> tsuids = new ArrayList<String>(1);
+    tsuids.add("ABCD");
+    sub.setTsuids(tsuids);
+    sub.validateAndSetQuery();
+    assertNotNull(sub.getTsuids());
+    assertEquals("*", sub.getTags().get("host"));
+    assertEquals("lga", sub.getTags().get("dc"));
+    assertEquals(Aggregators.SUM, sub.aggregator());
+    assertEquals(Aggregators.AVG, sub.downsampler());
+    assertEquals(300000, sub.downsampleInterval());
+    assertEquals(600000, sub.hbaseTimeStartExtensionMillis());
+    assertEquals(420000, sub.hbaseTimeEndExtensionMillis());
+  }
+
+  @Test
+  public void validateMetricSubQuery_hbaseStartTimeExtension() {
+    TSSubQuery sub = getMetricForValidate();
+    sub.setHbaseTimeExtension("ext-10m.");
+    assertEquals("ext-10m.", sub.getHbaseTimeExtension());
+    sub.validateAndSetQuery();
+    assertEquals(600000, sub.hbaseTimeStartExtensionMillis());
+    assertEquals(-1, sub.hbaseTimeEndExtensionMillis());
+  }
+
+  @Test
+  public void validateMetricSubQuery_hbaseEndTimeExtension() {
+    TSSubQuery sub = getMetricForValidate();
+    sub.setHbaseTimeExtension("ext-.7m");
+    assertEquals("ext-.7m", sub.getHbaseTimeExtension());
+    sub.validateAndSetQuery();
+    assertEquals(-1, sub.hbaseTimeStartExtensionMillis());
+    assertEquals(420000, sub.hbaseTimeEndExtensionMillis());
+  }
+
+  @Test
+  public void validateMetricSubQuery_noHbaseEndTimeExtension() {
+    TSSubQuery sub = getMetricForValidate();
+    sub.setHbaseTimeExtension("ext-");
+    assertEquals("ext-", sub.getHbaseTimeExtension());
+    sub.validateAndSetQuery();
+    assertEquals(-1, sub.hbaseTimeStartExtensionMillis());
+    assertEquals(-1, sub.hbaseTimeEndExtensionMillis());
   }
 
   /**

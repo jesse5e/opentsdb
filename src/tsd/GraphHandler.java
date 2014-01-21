@@ -249,7 +249,7 @@ final class GraphHandler implements HttpRpc {
     // serve something 3s stale, for 1d of data, 84s stale.
     if (end_time > now) {                            // (1)
       return 0;
-    } else if (end_time < now - Const.MAX_TIMESPAN   // (2)
+    } else if (end_time < now - Const.MAX_TIMESPAN_SECS   // (2)
                && !DateTime.isRelativeDate(
                    query.getQueryStringParam("start"))    // (3)
                && !DateTime.isRelativeDate(

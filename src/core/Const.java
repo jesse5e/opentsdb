@@ -56,7 +56,9 @@ public final class Const {
   public static final long MILLISECOND_MASK = 0xFFFFF00000000000L;
   
   /** Max time delta (in seconds) we can store in a column qualifier.  */
-  public static final short MAX_TIMESPAN = 3600;
+  public static final short MAX_TIMESPAN_SECS = 3600;
+  /** Max time delta (in milliseconds) we can store in a column qualifier.  */
+  public static final int MAX_TIMESPAN_MS = MAX_TIMESPAN_SECS * 1000;
 
   /**
    * Array containing the hexadecimal characters (0 to 9, A to F).

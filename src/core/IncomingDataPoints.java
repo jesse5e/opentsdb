@@ -187,7 +187,7 @@ final class IncomingDataPoints implements WritableDataPoints {
     // so that all TSDs create rows with the same base time.  Otherwise
     // we'd need to coordinate TSDs to avoid creating rows that cover
     // overlapping time periods.
-    final long base_time = timestamp - (timestamp % Const.MAX_TIMESPAN);
+    final long base_time = timestamp - (timestamp % Const.MAX_TIMESPAN_SECS);
     // Clone the row key since we're going to change it.  We must clone it
     // because the HBase client may still hold a reference to it in its
     // internal datastructures.
@@ -229,7 +229,7 @@ final class IncomingDataPoints implements WritableDataPoints {
             + " is less than previous=" + last_ts
             + " when trying to add value=" + Arrays.toString(value)
             + " to " + this);
-      } else if (timestamp - base_time >= Const.MAX_TIMESPAN) {
+      } else if (timestamp - base_time >= Const.MAX_TIMESPAN_SECS) {
         // Need to start a new row as we've exceeded Const.MAX_TIMESPAN.
         base_time = updateBaseTime(timestamp);
         size = 0;
@@ -283,7 +283,7 @@ final class IncomingDataPoints implements WritableDataPoints {
 
   private void grow() {
     // We can't have more than 1 value per second, so MAX_TIMESPAN values.
-    final int new_size = Math.min(size * 2, Const.MAX_TIMESPAN);
+    final int new_size = Math.min(size * 2, Const.MAX_TIMESPAN_SECS);
     if (new_size == size) {
       throw new AssertionError("Can't grow " + this + " larger than " + size);
     }

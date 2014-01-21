@@ -146,23 +146,79 @@ public class TestTsdbQueryDownsample {
     query.setStartTime(1356998400);
     query.setEndTime(1357041600);
     assertEquals(60000, TsdbQuery.ForTesting.getDownsampleIntervalMs(query));
-    long scanStartTime = 1356998400 - Const.MAX_TIMESPAN * 2 - 60;
-    assertEquals(scanStartTime, TsdbQuery.ForTesting.getScanStartTimeSeconds(query));
-    long scanEndTime = 1357041600 + Const.MAX_TIMESPAN + 1 + 60;
-    assertEquals(scanEndTime, TsdbQuery.ForTesting.getScanEndTimeSeconds(query));
+    long scanStartTime = 1356998400 - downsampleInterval / 1000 -
+                         Const.MAX_TIMESPAN_SECS;
+    assertEquals(scanStartTime,
+                 TsdbQuery.ForTesting.getScanStartTimeSeconds(query));
+    long hbaseScanStartTime = scanStartTime - Const.MAX_TIMESPAN_SECS + 1;
+    assertEquals(hbaseScanStartTime,
+                 TsdbQuery.ForTesting.getHBaseScanStartTimeSeconds(query));
+    long scanEndTime = 1357041600 + downsampleInterval / 1000 +
+                       Const.MAX_TIMESPAN_SECS;
+    assertEquals(scanEndTime,
+                 TsdbQuery.ForTesting.getScanEndTimeSeconds(query));
   }
 
   @Test
   public void downsampleMilliseconds() throws Exception {
     int downsampleInterval = (int)DateTime.parseDuration("60s");
     query.downsample(downsampleInterval, Aggregators.SUM);
-    query.setStartTime(1356998400000L);
-    query.setEndTime(1357041600000L);
+    query.setStartTime(2356998400000L);
+    query.setEndTime(2357041600000L);
     assertEquals(60000, TsdbQuery.ForTesting.getDownsampleIntervalMs(query));
-    long scanStartTime = 1356998400 - Const.MAX_TIMESPAN * 2 - 60;
-    assertEquals(scanStartTime, TsdbQuery.ForTesting.getScanStartTimeSeconds(query));
-    long scanEndTime = 1357041600 + Const.MAX_TIMESPAN + 1 + 60;
-    assertEquals(scanEndTime, TsdbQuery.ForTesting.getScanEndTimeSeconds(query));
+    long scanStartTime = 2356998400L - downsampleInterval / 1000 -
+                         Const.MAX_TIMESPAN_SECS;
+    assertEquals(scanStartTime,
+                 TsdbQuery.ForTesting.getScanStartTimeSeconds(query));
+    long hbaseScanStartTime = scanStartTime - Const.MAX_TIMESPAN_SECS + 1;
+    assertEquals(hbaseScanStartTime,
+                 TsdbQuery.ForTesting.getHBaseScanStartTimeSeconds(query));
+    long scanEndTime = 2357041600L + downsampleInterval / 1000 +
+                       Const.MAX_TIMESPAN_SECS;
+    assertEquals(scanEndTime,
+                 TsdbQuery.ForTesting.getScanEndTimeSeconds(query));
+  }
+
+  @Test
+  public void testScanTime_bigDownsampleTime() throws Exception {
+    query.setInterpolationTimeLimit(DateTime.parseDuration("110s"));
+    int downsampleInterval = (int)DateTime.parseDuration("200s");
+    query.downsample(downsampleInterval, Aggregators.SUM);
+    query.setStartTime(1356998400);
+    query.setEndTime(1357041600);
+    assertEquals(200000, TsdbQuery.ForTesting.getDownsampleIntervalMs(query));
+    long scanStartTime = 1356998400 - downsampleInterval / 1000 -
+                         DateTime.parseDuration("110s") / 1000;
+    assertEquals(scanStartTime,
+        TsdbQuery.ForTesting.getScanStartTimeSeconds(query));
+    long hbaseScanStartTime = scanStartTime - Const.MAX_TIMESPAN_SECS + 1;
+    assertEquals(hbaseScanStartTime,
+                 TsdbQuery.ForTesting.getHBaseScanStartTimeSeconds(query));
+    long scanEndTime = 1357041600 + downsampleInterval / 1000 +
+                       DateTime.parseDuration("110s") / 1000;
+    assertEquals(scanEndTime,
+                 TsdbQuery.ForTesting.getScanEndTimeSeconds(query));
+  }
+
+  @Test
+  public void testScanTime_customerOverride() throws Exception {
+    query.setInterpolationTimeLimit(DateTime.parseDuration("110s"));
+    query.setHbaseTimeStartExtensionMillis(DateTime.parseDuration("17s"));
+    query.setHbaseTimeEndExtensionMillis(DateTime.parseDuration("37s"));
+    int downsampleInterval = (int)DateTime.parseDuration("200s");
+    query.downsample(downsampleInterval, Aggregators.SUM);
+    query.setStartTime(1356998400);
+    query.setEndTime(1357041600);
+    assertEquals(200000, TsdbQuery.ForTesting.getDownsampleIntervalMs(query));
+    long scanStartTime = 1356998400 - 17;
+    assertEquals(scanStartTime,
+                 TsdbQuery.ForTesting.getScanStartTimeSeconds(query));
+    long hbaseScanStartTime = scanStartTime - Const.MAX_TIMESPAN_SECS + 1;
+    assertEquals(hbaseScanStartTime,
+                 TsdbQuery.ForTesting.getHBaseScanStartTimeSeconds(query));
+    long scanEndTime = 1357041600 + 37;
+    assertEquals(scanEndTime,
+                 TsdbQuery.ForTesting.getScanEndTimeSeconds(query));
   }
 
   @Test (expected = NullPointerException.class)

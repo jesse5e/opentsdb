@@ -153,6 +153,8 @@ public final class TSQuery {
             sub.getRate());
       }
       query.setInterpolationTimeLimit(sub.interpolationTimeLimitMillis());
+      query.setHbaseTimeStartExtensionMillis(sub.hbaseTimeStartExtensionMillis());
+      query.setHbaseTimeEndExtensionMillis(sub.hbaseTimeEndExtensionMillis());
       queries[i] = query;
       i++;
     }

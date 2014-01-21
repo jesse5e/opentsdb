@@ -138,6 +138,106 @@ public class TestTsdbQueryRate {
   }
 
   @Test
+  public void testScanTime_rate() throws Exception {
+    HashMap<String, String> tags = new HashMap<String, String>(1);
+    tags.put("host", "web01");
+    query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM,
+                        true, new RateOptions());
+    query.setInterpolationTimeLimit(DateTime.parseDuration("100s"));
+    int downsampleInterval = (int)DateTime.parseDuration("60s");
+    query.downsample(downsampleInterval, Aggregators.SUM);
+    query.setStartTime(1356998400);
+    query.setEndTime(1357041600);
+    assertEquals(60000, TsdbQuery.ForTesting.getDownsampleIntervalMs(query));
+    long scanStartTime = 1356998400 - downsampleInterval / 1000 -
+                         DateTime.parseDuration("100s") * 2 / 1000;
+    assertEquals(scanStartTime,
+                 TsdbQuery.ForTesting.getScanStartTimeSeconds(query));
+    long hbaseScanStartTime = scanStartTime - Const.MAX_TIMESPAN_SECS + 1;
+    assertEquals(hbaseScanStartTime,
+                 TsdbQuery.ForTesting.getHBaseScanStartTimeSeconds(query));
+    long scanEndTime = 1357041600 + downsampleInterval / 1000 +
+                       DateTime.parseDuration("100s") / 1000;
+    assertEquals(scanEndTime,
+                 TsdbQuery.ForTesting.getScanEndTimeSeconds(query));
+  }
+
+  @Test
+  public void testScanTimeMilliseconds_rate() throws Exception {
+    HashMap<String, String> tags = new HashMap<String, String>(1);
+    tags.put("host", "web01");
+    query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM,
+                        true, new RateOptions());
+    query.setInterpolationTimeLimit(DateTime.parseDuration("110s"));
+    int downsampleInterval = (int)DateTime.parseDuration("60s");
+    query.downsample(downsampleInterval, Aggregators.SUM);
+    query.setStartTime(2356998400000L);
+    query.setEndTime(2357041600000L);
+    assertEquals(60000, TsdbQuery.ForTesting.getDownsampleIntervalMs(query));
+    long scanStartTime = 2356998400L - downsampleInterval / 1000 -
+                         DateTime.parseDuration("110s") * 2 / 1000;
+    assertEquals(scanStartTime,
+                 TsdbQuery.ForTesting.getScanStartTimeSeconds(query));
+    long hbaseScanStartTime = scanStartTime - Const.MAX_TIMESPAN_SECS + 1;
+    assertEquals(hbaseScanStartTime,
+                 TsdbQuery.ForTesting.getHBaseScanStartTimeSeconds(query));
+    long scanEndTime = 2357041600L + downsampleInterval / 1000 +
+                       DateTime.parseDuration("110s") / 1000;
+    assertEquals(scanEndTime,
+                 TsdbQuery.ForTesting.getScanEndTimeSeconds(query));
+  }
+
+  @Test
+  public void testScanTime_rateBigDownsampleTime() throws Exception {
+    HashMap<String, String> tags = new HashMap<String, String>(1);
+    tags.put("host", "web01");
+    query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM,
+                        true, new RateOptions());
+    query.setInterpolationTimeLimit(DateTime.parseDuration("110s"));
+    int downsampleInterval = (int)DateTime.parseDuration("200s");
+    query.downsample(downsampleInterval, Aggregators.SUM);
+    query.setStartTime(1356998400);
+    query.setEndTime(1357041600);
+    assertEquals(200000, TsdbQuery.ForTesting.getDownsampleIntervalMs(query));
+    long scanStartTime = 1356998400 - downsampleInterval / 1000 -
+                         DateTime.parseDuration("110s") * 2 / 1000;
+    assertEquals(scanStartTime,
+                 TsdbQuery.ForTesting.getScanStartTimeSeconds(query));
+    long hbaseScanStartTime = scanStartTime - Const.MAX_TIMESPAN_SECS + 1;
+    assertEquals(hbaseScanStartTime,
+                 TsdbQuery.ForTesting.getHBaseScanStartTimeSeconds(query));
+    long scanEndTime = 1357041600 + downsampleInterval / 1000 +
+                       DateTime.parseDuration("110s") / 1000;
+    assertEquals(scanEndTime,
+                 TsdbQuery.ForTesting.getScanEndTimeSeconds(query));
+  }
+
+  @Test
+  public void testScanTime_customerOverride() throws Exception {
+    HashMap<String, String> tags = new HashMap<String, String>(1);
+    tags.put("host", "web01");
+    query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM,
+                        true, new RateOptions());
+    query.setInterpolationTimeLimit(DateTime.parseDuration("110s"));
+    query.setHbaseTimeStartExtensionMillis(DateTime.parseDuration("17s"));
+    query.setHbaseTimeEndExtensionMillis(DateTime.parseDuration("37s"));
+    int downsampleInterval = (int)DateTime.parseDuration("200s");
+    query.downsample(downsampleInterval, Aggregators.SUM);
+    query.setStartTime(1356998400);
+    query.setEndTime(1357041600);
+    assertEquals(200000, TsdbQuery.ForTesting.getDownsampleIntervalMs(query));
+    long scanStartTime = 1356998400 - DateTime.parseDuration("17s") / 1000;
+    assertEquals(scanStartTime,
+        TsdbQuery.ForTesting.getScanStartTimeSeconds(query));
+    long hbaseScanStartTime = scanStartTime - Const.MAX_TIMESPAN_SECS + 1;
+    assertEquals(hbaseScanStartTime,
+        TsdbQuery.ForTesting.getHBaseScanStartTimeSeconds(query));
+    long scanEndTime = 1357041600 + DateTime.parseDuration("37s") / 1000;
+    assertEquals(scanEndTime,
+        TsdbQuery.ForTesting.getScanEndTimeSeconds(query));
+  }
+
+  @Test
   public void runLongSingleTSRate() throws Exception {
     storeLongTimeSeriesSeconds(true, false);;
     HashMap<String, String> tags = new HashMap<String, String>(1);

@@ -164,6 +164,22 @@ public interface Query {
   void setInterpolationTimeLimit(long millis);
 
   /**
+   * Sets HBase query start time extension. Makes HBase query begin earlier
+   * than the start timestamp of a user query time range by the specified
+   * amount of time. A negative value enables the default behavior.
+   * @param millis HBase query start time extension in milliseconds
+   */
+  void setHbaseTimeStartExtensionMillis(long millis);
+
+  /**
+   * Sets HBase query end time extension. Makes HBase query end later
+   * than the end timestamp of a user query time range by the specified
+   * amount of time. A negative value enables the default behavior.
+   * @param millis HBase query end time extension in milliseconds
+   */
+  void setHbaseTimeEndExtensionMillis(long millis);
+
+  /**
    * Runs this query.
    * @return The data points matched by this query.
    * <p>

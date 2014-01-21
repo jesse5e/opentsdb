@@ -25,6 +25,8 @@ import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
 
+import net.opentsdb.utils.DateTime;
+
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 import org.powermock.api.mockito.PowerMockito;
@@ -133,6 +135,27 @@ public class TestTsdbQueryInterpolation {
     when(metrics.width()).thenReturn((short)3);
     when(tag_names.width()).thenReturn((short)3);
     when(tag_values.width()).thenReturn((short)3);
+  }
+
+  @Test
+  public void testScanStartTime_bigInterpolationTime() throws Exception {
+    query.setInterpolationTimeLimit(DateTime.parseDuration("12345s"));
+    int downsampleInterval = (int)DateTime.parseDuration("200s");
+    query.downsample(downsampleInterval, Aggregators.SUM);
+    query.setStartTime(1356998400);
+    query.setEndTime(1357041600);
+    assertEquals(200000, TsdbQuery.ForTesting.getDownsampleIntervalMs(query));
+    long scanStartTime = 1356998400 - downsampleInterval / 1000 -
+        DateTime.parseDuration("12345s") / 1000;
+    assertEquals(scanStartTime,
+        TsdbQuery.ForTesting.getScanStartTimeSeconds(query));
+    long hbaseScanStartTime = scanStartTime - Const.MAX_TIMESPAN_SECS + 1;
+    assertEquals(hbaseScanStartTime,
+        TsdbQuery.ForTesting.getHBaseScanStartTimeSeconds(query));
+    long scanEndTime = 1357041600 + downsampleInterval / 1000 +
+        DateTime.parseDuration("12345s") / 1000;
+    assertEquals(scanEndTime,
+        TsdbQuery.ForTesting.getScanEndTimeSeconds(query));
   }
 
   @Test

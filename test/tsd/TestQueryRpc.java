@@ -158,6 +158,20 @@ public final class TestQueryRpc {
   }
 
   @Test
+  public void parseQueryMType__hbaseTimeExtension() throws Exception {
+    HttpQuery query = NettyMocks.getQuery(tsdb,
+        "/api/query?start=1h-ago&m=sum:ext-3m.7h:itl-7m:1h-avg:rate:sys.cpu.0");
+      TSQuery tsq = (TSQuery) parseQuery.invoke(rpc, tsdb, query);
+      TSSubQuery sub = tsq.getQueries().get(0);
+      assertEquals("sum", sub.getAggregator());
+      assertEquals("itl-7m", sub.getInterpolationTimeLimit());
+      assertEquals("ext-3m.7h", sub.getHbaseTimeExtension());
+      assertEquals("1h-avg", sub.getDownsample());
+      assertTrue(sub.getRate());
+      assertEquals("sys.cpu.0", sub.getMetric());
+  }
+
+  @Test
   public void parseQueryTSUIDType() throws Exception {
     HttpQuery query = NettyMocks.getQuery(tsdb, 
       "/api/query?start=1h-ago&tsuid=sum:010101");
@@ -184,6 +198,23 @@ public final class TestQueryRpc {
     assertNotNull(sub);
     assertEquals("sum", sub.getAggregator());
     assertEquals("itl-7m", sub.getInterpolationTimeLimit());
+    assertEquals(1, sub.getTsuids().size());
+    assertEquals("010101", sub.getTsuids().get(0));
+  }
+
+  @Test
+  public void parseQueryTSUIDType__hbaseTimeExtension() throws Exception {
+    HttpQuery query = NettyMocks.getQuery(tsdb,
+      "/api/query?start=1h-ago&tsuid=sum:itl-7m:ext-3m.7h:010101");
+    TSQuery tsq = (TSQuery) parseQuery.invoke(rpc, tsdb, query);
+    assertNotNull(tsq);
+    assertEquals("1h-ago", tsq.getStart());
+    assertNotNull(tsq.getQueries());
+    TSSubQuery sub = tsq.getQueries().get(0);
+    assertNotNull(sub);
+    assertEquals("sum", sub.getAggregator());
+    assertEquals("itl-7m", sub.getInterpolationTimeLimit());
+    assertEquals("ext-3m.7h", sub.getHbaseTimeExtension());
     assertEquals(1, sub.getTsuids().size());
     assertEquals("010101", sub.getTsuids().get(0));
   }
