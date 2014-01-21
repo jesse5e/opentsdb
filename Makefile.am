@@ -145,6 +145,7 @@ test_SRC := \
 	test/core/TestRateSpan.java	\
 	test/core/TestRowSeq.java	\
 	test/core/TestSpan.java	\
+	test/core/TestSpanGroupAggregationIter.java \
 	test/core/TestTags.java	\
 	test/core/TestTSDB.java	\
 	test/core/TestTsdbQuery.java	\

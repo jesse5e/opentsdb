@@ -388,18 +388,27 @@ final class SpanGroup implements DataPoints {
     Interpolation interpolation = aggregator.interpolationMethod();
     if (downsampler == null) {
       // TODO: Pass span iterators rather than unnecessary sampling interval.
-      return new AggregationIter(interpolation, FIXED_INTERVAL_MILLIS);
+      return AggregationIter.create(spans, start_time, end_time, aggregator,
+                                    interpolation, interpolationTimeLimitMillis,
+                                    downsampler, FIXED_INTERVAL_MILLIS,
+                                    rate, rate_options);
     } if (sample_interval <= FIXED_INTERVAL_MILLIS) {
       // Honors the given sample interval if it is too small.
-      return new AggregationIter(interpolation, sample_interval);
+      return AggregationIter.create(spans, start_time, end_time, aggregator,
+                                    interpolation, interpolationTimeLimitMillis,
+                                    downsampler, sample_interval,
+                                    rate, rate_options);
     } else {
       // Downsamples aggregated values.
       // 1. Downsamples each timeseries to {@link #FIXED_INTERVAL_MILLIS}.
       // 2. Aggregates values across downsampled timeseries. It is done to
       //    reduce the overhead of interpolation while aggregating.
       // 3. Downsamples aggregated values.
-      SeekableView aggregationIter = new AggregationIter(interpolation,
-          FIXED_INTERVAL_MILLIS);
+      SeekableView aggregationIter = AggregationIter.create(
+          spans, start_time, end_time, aggregator,
+          interpolation, interpolationTimeLimitMillis,
+          downsampler, FIXED_INTERVAL_MILLIS,
+          rate, rate_options);
       return new Downsampler(aggregationIter, sample_interval, downsampler);
     }
   }
@@ -560,7 +569,8 @@ final class SpanGroup implements DataPoints {
    *   {@link #nextLongValue}: Moves to the next span (iterator) and returns
    *       interpolated value of it.
    */
-  private final class AggregationIter
+  // TODO: Extract the AggregationIter class to its own file.
+  static final class AggregationIter
     implements SeekableView, DataPoint,
                Aggregator.Longs, Aggregator.Doubles {
 
@@ -574,9 +584,22 @@ final class SpanGroup implements DataPoints {
      */
     private static final long TIME_MASK  = 0x7FFFFFFFFFFFFFFFL;
 
+    /** Aggregator to use to aggregate data points from different Spans. */
+    private final Aggregator aggregator;
+
     /** Interpolation method to use when aggregating time series */
     private final Interpolation method;
-    
+
+    /**
+     * Interpolation time limit. An interpolated data point will be
+     * dropped while aggregating data points of spans if the time gap of
+     * two end-points for the interpolation is bigger than the time limit.
+     */
+    private final long interpolationTimeLimitMillis;
+
+    /** If true, use rate of change instead of actual values. */
+    private final boolean rate;
+
     /**
      * Where we are in each {@link Span} in the group.
      * The iterators in this array always points to 2 values ahead of the
@@ -586,6 +609,12 @@ final class SpanGroup implements DataPoints {
      * array.
      */
     private final SeekableView[] iterators;
+
+    /** Start time (UNIX timestamp in seconds or ms) on 32 bits ("unsigned" int). */
+    private final long start_time;
+
+    /** End time (UNIX timestamp in seconds or ms) on 32 bits ("unsigned" int). */
+    private final long end_time;
 
     /**
      * The current and previous timestamps for the data points being used.
@@ -625,16 +654,37 @@ final class SpanGroup implements DataPoints {
     /** The index in {@link #values} of the current value being aggregated. */
     private int pos;
 
-    /** Creates a new iterator for this {@link SpanGroup}. */
-    public AggregationIter(final Interpolation method,
-        final int intervalMillis) {
-      this.method = method;
+    /**
+     * Creates a new iterator for a {@link SpanGroup}.
+     * @param spans Spans in a group.
+     * @param start_time Any data point strictly before this timestamp will be
+     * ignored.
+     * @param end_time Any data point strictly after this timestamp will be
+     * ignored.
+     * @param aggregator The aggregation function to use.
+     * @param method Interpolation method to use when aggregating time series
+     * @param interpolationTimeLimitMillis Interpolation is valid only in this
+     * time limit.
+     * @param downsampler Aggregation function to use to group data points
+     * within an interval.
+     * @param intervalMillis Number of milliseconds wanted between each data
+     * point.
+     * @param rate If {@code true}, the rate of the series will be used instead
+     * of the actual values.
+     * @param rate_options Specifies the optional additional rate calculation
+     * options.
+     * @return An {@link AggregationIter} object.
+     */
+    public static AggregationIter create(final List<Span> spans,
+        final long start_time, final long end_time,
+        final Aggregator aggregator,
+        final Interpolation method,
+        final long interpolationTimeLimitMillis,
+        final Aggregator downsampler,
+        final int intervalMillis,
+        final boolean rate, final RateOptions rate_options) {
       final int size = spans.size();
-      iterators = new SeekableView[size];
-      timestamps = new long[size * 2];
-      values = new long[size * 2];
-      // Initialize every Iterator, fetch their first values that fall
-      // within our time range.
+      final SeekableView[] iterators = new SeekableView[size];
       for (int i = 0; i < size; i++) {
         SeekableView it;
         if (downsampler == null) {
@@ -644,16 +694,54 @@ final class SpanGroup implements DataPoints {
         }
         if (rate) {
           it = new RateSpan(it, rate_options, interpolationTimeLimitMillis,
-                            end_time);
+              end_time);
         }
         iterators[i] = it;
+      }
+      return new AggregationIter(iterators, start_time, end_time, aggregator, method, interpolationTimeLimitMillis, rate);
+    }
+
+    /**
+     * Creates an aggregation iterator for a group of data point iterators.
+     * @param iterators Seekable views of spans in a group.
+     * Ignored if {@code null}.  Additional spans can be added with {@link #add}.
+     * @param start_time Any data point strictly before this timestamp will be
+     * ignored.
+     * @param end_time Any data point strictly after this timestamp will be
+     * ignored.
+     * @param aggregator The aggregation function to use.
+     * @param method Interpolation method to use when aggregating time series
+     * @param interpolationTimeLimitMillis Interpolation is valid only in this
+     * time limit.
+     * @param rate If {@code true}, the rate of the series will be used instead
+     * of the actual values.
+     */
+    public AggregationIter(final SeekableView[] iterators,
+                           final long start_time, final long end_time,
+                           final Aggregator aggregator,
+                           final Interpolation method,
+                           final long interpolationTimeLimitMillis,
+                           final boolean rate) {
+      this.iterators = iterators;
+      this.start_time = start_time;
+      this.end_time = end_time;
+      this.aggregator = aggregator;
+      this.method = method;
+      this.interpolationTimeLimitMillis = interpolationTimeLimitMillis;
+      this.rate = rate;
+      final int size = iterators.length;
+      timestamps = new long[size * 2];
+      values = new long[size * 2];
+      // Initialize every Iterator, fetch their first values that fall
+      // within our time range.
+      for (int i = 0; i < size; i++) {
+        SeekableView it = iterators[i];
         it.seek(start_time);
         final DataPoint dp;
         try {
           dp = it.next();
         } catch (NoSuchElementException e) {
-          throw new AssertionError("Span #" + i + " is empty! span="
-                                   + spans.get(i));
+          throw new AssertionError("Span #" + i + " is empty! span=" + it);
         }
         //LOG.debug("Creating iterator #" + i);
         if (dp.timestamp() >= start_time) {
@@ -1044,6 +1132,13 @@ final class SpanGroup implements DataPoints {
         + ')';
     }
 
+    private String toStringSharedAttributes() {
+      return "start_time=" + start_time
+        + ", end_time=" + end_time
+        + ", rate=" + rate
+        + ", aggregator=" + aggregator
+        + ')';
+    }
   }
 
   public String toString() {
