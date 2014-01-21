@@ -217,7 +217,7 @@ public final class TSSubQuery {
     return this.downsampler;
   }
   
-  /** @return the parsed downsample interval in seconds */
+  /** @return the parsed downsample interval in milliseconds */
   public long downsampleInterval() {
     return this.downsample_interval;
   }

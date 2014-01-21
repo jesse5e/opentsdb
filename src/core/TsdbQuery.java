@@ -124,7 +124,7 @@ final class TsdbQuery implements Query {
    */
   private Aggregator downsampler;
 
-  /** Minimum time interval (in seconds) wanted between each data point. */
+  /** Minimum time interval (in milliseconds) wanted between each data point. */
   private int sample_interval_ms;
 
   /** Optional list of TSUIDs to fetch and aggregate instead of a metric */
