@@ -20,7 +20,7 @@ import datetime
 import random
 
 
-GIT_DIFF_CACHED = ["git", "diff", "--cached", "--full-index"]
+GIT_DIFF_CACHED = ["git", "diff", "--find-copies", "--cached", "--full-index"]
 GIT_DIFF_UNCACHED = ["git", "diff", "--full-index"]
 GIT_FETCH_DRY_RUN = ["git", "fetch", "--dry-run", "--all"]
 POST_REVIEW_TECH = ["post-review", "-o", "--target-groups=tech"]
