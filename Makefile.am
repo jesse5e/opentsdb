@@ -524,7 +524,7 @@ pom.xml: pom.xml.in Makefile
 	} >$@-t
 	mv $@-t ../$@
 
-RPM_REVISION := 2
+RPM_REVISION := 1
 RPM := opentsdb-$(PACKAGE_VERSION)-$(RPM_REVISION).noarch.rpm
 SOURCE_TARBALL := opentsdb-$(PACKAGE_VERSION).tar.gz
 rpm: $(RPM)
