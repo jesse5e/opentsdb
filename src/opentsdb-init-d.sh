@@ -16,7 +16,7 @@ PROG_OPTS=tsd
 HOSTNAME=$(hostname --fqdn)
 
 LOG_DIR=/var/log/$NAME
-LOG_FILE_PREFIX=${LOG_DIR}/${HOSTNAME}-opentsdb
+LOG_FILE_PREFIX=${LOG_DIR}/${HOSTNAME}-
 [ -e $LOG_DIR ] || mkdir $LOG_DIR
 
 [ -e /etc/sysconfig/$NAME ] && . /etc/sysconfig/$NAME
@@ -29,7 +29,8 @@ start() {
 
   # TODO: The tsdb program does not run in background. Make it happen.
   # TODO: Support non-root user and group.
-  $PROG $PROG_OPTS 1> ${LOG_FILE_PREFIX}.out 2> ${LOG_FILE_PREFIX}.err &
+  JVMARGS="-DLOG_FILE_PREFIX=${LOG_FILE_PREFIX} -enableassertions -enablesystemassertions" \
+      $PROG $PROG_OPTS 1> ${LOG_FILE_PREFIX}opentsdb.out 2> ${LOG_FILE_PREFIX}opentsdb.err &
 }
 
 stop() {
