@@ -25,19 +25,35 @@ import org.junit.Test;
 /** Tests {@link SpanGroup.AggregationIter}. */
 public class TestSpanGroupAggregationIter {
 
+  private static final long BASE_TIME = 1356998400000L;
   private static final DataPoint[] DATA_POINTS_1 = new DataPoint[] {
-    MutableDataPoint.ofLongValue(1356998400000L, 40),
-    MutableDataPoint.ofLongValue(1356998400000L + 10000, 50),
-    MutableDataPoint.ofLongValue(1356998400000L + 30000, 70)
+    MutableDataPoint.ofLongValue(BASE_TIME, 40),
+    MutableDataPoint.ofLongValue(BASE_TIME + 10000, 50),
+    MutableDataPoint.ofLongValue(BASE_TIME + 30000, 70)
   };
   private static final DataPoint[] DATA_POINTS_2 = new DataPoint[] {
-    MutableDataPoint.ofLongValue(1356998400000L + 10000, 40),
-    MutableDataPoint.ofLongValue(1356998400000L + 20000, 50)
+    MutableDataPoint.ofLongValue(BASE_TIME + 10000, 40),
+    MutableDataPoint.ofLongValue(BASE_TIME + 20000, 50)
   };
+  final DataPoint[] DATA_5SEC = new DataPoint[] {
+      MutableDataPoint.ofDoubleValue(BASE_TIME + 00000L, 1),
+      MutableDataPoint.ofDoubleValue(BASE_TIME + 07000L, 1),
+      MutableDataPoint.ofDoubleValue(BASE_TIME + 10000L, 1),
+      MutableDataPoint.ofDoubleValue(BASE_TIME + 15000L, 1),
+      MutableDataPoint.ofDoubleValue(BASE_TIME + 20000L, 1),
+      MutableDataPoint.ofDoubleValue(BASE_TIME + 25000L, 1),
+      MutableDataPoint.ofDoubleValue(BASE_TIME + 30000L, 1),
+      MutableDataPoint.ofDoubleValue(BASE_TIME + 35000L, 1),
+      MutableDataPoint.ofDoubleValue(BASE_TIME + 40000L, 1),
+      MutableDataPoint.ofDoubleValue(BASE_TIME + 45000L, 1),
+      MutableDataPoint.ofDoubleValue(BASE_TIME + 50000L, 1)
+  };
+  private static final Aggregator AVG = Aggregators.get("avg");;
+  private static final Aggregator SUM = Aggregators.get("sum");;
 
   private SeekableView[] iterators;
-  private long start_time;
-  private long end_time;
+  private long startTimeMs;
+  private long endTimeMs;
   private boolean rate;
   private Aggregator aggregator;
   private long interpolationTimeLimitMillis;
@@ -46,8 +62,8 @@ public class TestSpanGroupAggregationIter {
 
   @Before
   public void setUp() {
-    start_time = 1356998400L * 1000;
-    end_time = 1356998500L * 1000;
+    startTimeMs = BASE_TIME;
+    endTimeMs = BASE_TIME + 100000;
     rate = false;
     aggregator = Aggregators.SUM;
     interpolationTimeLimitMillis = DateTime.parseDuration("1h");
@@ -60,7 +76,8 @@ public class TestSpanGroupAggregationIter {
         SeekableViewsForTest.fromArray(DATA_POINTS_1)
     };
     SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
-        start_time, end_time, aggregator, interpolation, interpolationTimeLimitMillis, rate);
+        startTimeMs, endTimeMs, aggregator, interpolation,
+        interpolationTimeLimitMillis, rate);
     for (DataPoint expected: DATA_POINTS_1) {
       assertTrue(sgai.hasNext());
       DataPoint dp = sgai.next();
@@ -77,15 +94,125 @@ public class TestSpanGroupAggregationIter {
         SeekableViewsForTest.fromArray(DATA_POINTS_2),
     };
     SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
-        start_time, end_time, aggregator, interpolation, interpolationTimeLimitMillis, rate);
+        startTimeMs, endTimeMs, aggregator, interpolation,
+        interpolationTimeLimitMillis, rate);
     DataPoint[] expectedDataPoints = new DataPoint[] {
-        MutableDataPoint.ofLongValue(1356998400000L, 40),
-        MutableDataPoint.ofLongValue(1356998400000L + 10000, 50 + 40),
+        MutableDataPoint.ofLongValue(BASE_TIME, 40),
+        MutableDataPoint.ofLongValue(BASE_TIME + 10000, 50 + 40),
         // 60 is the interpolated value.
-        MutableDataPoint.ofLongValue(1356998400000L + 20000, 50 + 60),
-        MutableDataPoint.ofLongValue(1356998400000L + 30000, 70)
+        MutableDataPoint.ofLongValue(BASE_TIME + 20000, 50 + 60),
+        MutableDataPoint.ofLongValue(BASE_TIME + 30000, 70)
       };
     for (DataPoint expected: expectedDataPoints) {
+      assertTrue(sgai.hasNext());
+      DataPoint dp = sgai.next();
+      assertEquals(expected.timestamp(), dp.timestamp());
+      assertEquals(expected.longValue(), dp.longValue());
+    }
+    assertFalse(sgai.hasNext());
+  }
+
+  @Test
+  public void testSpanGroup_manySpans() {
+    iterators = new SeekableView[] {
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG),
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG),
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG),
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG),
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG),
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG),
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG)
+    };
+    // Starting at 01 second causes abandoning the data of the first 10 seconds
+    // by the first round of ten-second downsampling.
+    startTimeMs = BASE_TIME + 1000L;
+    endTimeMs = BASE_TIME + 100000;
+    SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
+        startTimeMs, endTimeMs, aggregator, interpolation,
+        interpolationTimeLimitMillis, rate);
+    DataPoint[] expectedDataPoints = new DataPoint[] {
+        MutableDataPoint.ofDoubleValue(BASE_TIME + 10000L, 7),
+        MutableDataPoint.ofDoubleValue(BASE_TIME + 20000L, 7),
+        MutableDataPoint.ofDoubleValue(BASE_TIME + 30000L, 7),
+        MutableDataPoint.ofDoubleValue(BASE_TIME + 40000L, 7),
+        MutableDataPoint.ofDoubleValue(BASE_TIME + 50000L, 7),
+      };
+    for (DataPoint expected: expectedDataPoints) {
+      assertTrue(sgai.hasNext());
+      DataPoint dp = sgai.next();
+      assertEquals(expected.timestamp(), dp.timestamp());
+      assertEquals(expected.doubleValue(), dp.doubleValue(), 0);
+    }
+    assertFalse(sgai.hasNext());
+  }
+
+  @Test
+  public void testSpanGroup_secondRoundDownsampling() {
+    iterators = new SeekableView[] {
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG),
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG),
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG),
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG),
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG),
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG),
+        new Downsampler(SeekableViewsForTest.fromArray(DATA_5SEC), 10000, AVG)
+    };
+    startTimeMs = BASE_TIME + 01000L;
+    endTimeMs = BASE_TIME + 100000;
+    SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
+        startTimeMs, endTimeMs, aggregator, interpolation,
+        interpolationTimeLimitMillis, rate);
+    Downsampler downsampler = new Downsampler(sgai, 15000, SUM);
+    // See the expectedDataPoints at testSpanGroup_manySpans for the output of
+    // Aggregator.
+    DataPoint[] expectedDataPoints = new DataPoint[] {
+        // Aggregator output timestamp: BASE_TIME + 10000
+        MutableDataPoint.ofDoubleValue(BASE_TIME + 00000L, 7),
+        // Aggregator output timestamp: BASE_TIME + 20000
+        MutableDataPoint.ofDoubleValue(BASE_TIME + 15000L, 7),
+        // Aggregator output timestamps: BASE_TIME + 30000, BASE_TIME + 40000
+        MutableDataPoint.ofDoubleValue(BASE_TIME + 30000L, 14),
+        // Aggregator output timestamp: BASE_TIME + 50000
+        MutableDataPoint.ofDoubleValue(BASE_TIME + 45000L, 7)
+      };
+    for (DataPoint expected: expectedDataPoints) {
+      assertTrue(downsampler.hasNext());
+      DataPoint dp = downsampler.next();
+      assertEquals(expected.timestamp(), dp.timestamp());
+      assertEquals(String.format("timestamp = %d", dp.timestamp()),
+                   expected.doubleValue(), dp.doubleValue(), 0);
+    }
+    assertFalse(downsampler.hasNext());
+  }
+
+  @Test
+  public void testSpanGroup_buggySpan() {
+    iterators = new SeekableView[] {
+        new BuggySeekableView(DATA_POINTS_1)
+    };
+    SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
+        BASE_TIME + 00000L, endTimeMs, aggregator, interpolation,
+        interpolationTimeLimitMillis, rate);
+    assertTrue(sgai.hasNext());
+    iterators[0] = new BuggySeekableView(DATA_POINTS_1);
+    SpanGroup.AggregationIter buggyItr = new SpanGroup.AggregationIter(
+        iterators, BASE_TIME + 01000L, endTimeMs, aggregator, interpolation,
+        interpolationTimeLimitMillis, rate);
+    assertFalse(buggyItr.hasNext());
+  }
+
+  @Test
+  public void testSpanGroup_emptySpan() {
+    final DataPoint[] emptyDataPoints = new DataPoint[] {
+    };
+    iterators = new SeekableView[] {
+        SeekableViewsForTest.fromArray(emptyDataPoints),
+        SeekableViewsForTest.fromArray(DATA_POINTS_1),
+    };
+    SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
+        BASE_TIME + 00000L, endTimeMs, aggregator, interpolation,
+        interpolationTimeLimitMillis, rate);
+    for (DataPoint expected: DATA_POINTS_1) {
       assertTrue(sgai.hasNext());
       DataPoint dp = sgai.next();
       assertEquals(expected.timestamp(), dp.timestamp());
@@ -149,5 +276,36 @@ public class TestSpanGroupAggregationIter {
   @Test
   public void testAggregating500000Spans() {
     testAggregatingMultiSpans(500000);
+  }
+
+  /** Iterates with buggy seek method. */
+  private static class BuggySeekableView implements SeekableView {
+
+    private final DataPoint[] dataPoints;
+    private int index = 0;
+
+    BuggySeekableView(final DataPoint[] dataPoints) {
+      this.dataPoints = dataPoints;
+    }
+
+    @Override
+    public boolean hasNext() {
+      return dataPoints.length > index;
+    }
+
+    @Override
+    public DataPoint next() {
+      return dataPoints[index++];
+    }
+
+    @Override
+    public void remove() {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void seek(long timestamp) {
+      index = 0;
+    }
   }
 }

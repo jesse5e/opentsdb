@@ -344,15 +344,15 @@ public final class TestSpan {
 
     assertEquals(5, values.size());
     assertEquals(40, values.get(0).longValue());
-    assertEquals(1356998500000L, timestampsInMillis.get(0).longValue());
+    assertEquals(1356998000000L, timestampsInMillis.get(0).longValue());
     assertEquals(50, values.get(1).longValue());
-    assertEquals(1357000500000L, timestampsInMillis.get(1).longValue());
+    assertEquals(1357000000000L, timestampsInMillis.get(1).longValue());
     assertEquals(45, values.get(2).longValue());
-    assertEquals(1357002500000L, timestampsInMillis.get(2).longValue());
+    assertEquals(1357002000000L, timestampsInMillis.get(2).longValue());
     assertEquals(40, values.get(3).longValue());
-    assertEquals(1357005500000L, timestampsInMillis.get(3).longValue());
+    assertEquals(1357005000000L, timestampsInMillis.get(3).longValue());
     assertEquals(50, values.get(4).longValue());
-    assertEquals(1357007500000L, timestampsInMillis.get(4).longValue());
+    assertEquals(1357007000000L, timestampsInMillis.get(4).longValue());
   }
 
   @Test

@@ -104,7 +104,7 @@ public class Downsampler implements SeekableView {
     private final int interval;
 
     /** The end of the current interval. */
-    private long timestampEndInterval = Long.MIN_VALUE;
+    private long timestampEndInterval;
 
     /** True if the last value was successfully extracted from the source. */
     private boolean hasNextValueFromSource = false;
@@ -124,6 +124,7 @@ public class Downsampler implements SeekableView {
     ValuesInInterval(SeekableView source, int interval) {
       this.source = source;
       this.interval = interval;
+      this.timestampEndInterval = interval;
     }
 
     /** Initializes to iterate intervals. */
@@ -152,7 +153,7 @@ public class Downsampler implements SeekableView {
     private void resetEndOfInterval() {
       if (hasNextValueFromSource) {
         long timestamp = nextDataPoint.timestamp();
-        timestampEndInterval = timestamp + interval - (timestamp % interval);
+        timestampEndInterval = calculateIntervalEndTimestamp(timestamp);
       }
     }
 
@@ -164,16 +165,43 @@ public class Downsampler implements SeekableView {
 
     /** Advances the interval iterator to the given timestamp. */
     void seekInterval(long timestamp) {
-      source.seek(timestamp);
+      // To make sure that the interval of the given timestamp is fully filled,
+      // rounds up the seeking timestamp by the interval.
+      source.seek(roundUpTimestamp(timestamp));
       initialized = false;
     }
 
     /** Returns the representative timestamp of the current interval. */
-    long getIntervalTimestamp() {
-      if (timestampEndInterval >= interval) {
-        return timestampEndInterval - interval + interval / 2;
-      }
-      return timestampEndInterval;
+    private long getIntervalTimestamp() {
+      return calculateRepresentativeTimestamp(timestampEndInterval - interval);
+    }
+
+    /** Returns the end of the interval of the given timestamp. */
+    private long calculateIntervalEndTimestamp(long timestamp) {
+      return alignTimestamp(timestamp) + interval;
+    }
+
+    /** Returns the timestamp of the interval of the given timestamp. */
+    private long calculateRepresentativeTimestamp(long timestamp) {
+      // NOTE: It is well-known practice taking the start time of
+      // a downsample interval as a representative timestamp of it. It also
+      // provides the correct context for seek.
+      return alignTimestamp(timestamp);
+    }
+
+    /**
+     * Rounds up the given timestamp.
+     * @param timestamp Timestamp to round up
+     * @return The smallest timestamp that is a multiple of the interval
+     * and is greater than or equal to the given timestamp.
+     */
+    private long roundUpTimestamp(long timestamp) {
+      return alignTimestamp(timestamp + interval - 1);
+    }
+
+    /** Returns timestamp aligned by interval. */
+    private long alignTimestamp(long timestamp) {
+      return timestamp - (timestamp % interval);
     }
 
     // ---------------------- //

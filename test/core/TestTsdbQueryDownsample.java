@@ -264,7 +264,8 @@ public class TestTsdbQueryDownsample {
         double value = i * 2 + 0.5;
         assertEquals(value, dp.doubleValue(), 0.00001);
       }
-      assertEquals(30000, dp.timestamp() % 60000);
+      // Timestamp of an interval should be aligned by the interval.
+      assertEquals(0, dp.timestamp() % 60000);
       ++i;
     }
     // Out of 300 values, the first and the last intervals have one value each,
@@ -306,7 +307,8 @@ public class TestTsdbQueryDownsample {
         double value = i * 2 + 0.5;
         assertEquals(value, dp.doubleValue(), 0.00001);
       }
-      assertEquals(500, dp.timestamp() % 1000);
+      // Timestamp of an interval should be aligned by the interval.
+      assertEquals(0, dp.timestamp() % 1000);
       ++i;
     }
     // Out of 300 values, the first and the last intervals have one value each,
@@ -334,11 +336,12 @@ public class TestTsdbQueryDownsample {
     //   (1356998493s, 3), (1356998523s, 4), 5, ... 298, 299, 300
     // After aggregation as rate: 1/30, (1/30, 1/30), ... (1/30, 1/30)
     // After avg-downsampling: 1/30, 1/30, 1/30, ... 1/30
-    long expectedTimestamp = 1356998490000L;
+    long expectedTimestamp = 1356998460000L;
     for (DataPoint dp : dps[0]) {
       assertFalse(dp.isInteger());
       assertEquals(0.033F, dp.doubleValue(), 0.001);
-      assertEquals(30000, dp.timestamp() % 60000);
+      // Timestamp of an interval should be aligned by the interval.
+      assertEquals(0, dp.timestamp() % 60000);
       assertEquals(expectedTimestamp, dp.timestamp());
       expectedTimestamp += 60000;
     }
@@ -379,7 +382,8 @@ public class TestTsdbQueryDownsample {
         // of two consecutive intervals.
         assertEquals(2F, dp.doubleValue(), 0.001);
       }
-      assertEquals(500, dp.timestamp() % 1000);
+      // Timestamp of an interval should be aligned by the interval.
+      assertEquals(0, dp.timestamp() % 1000);
       ++i;
     }
     assertEquals(150, dps[0].size());
@@ -418,7 +422,8 @@ public class TestTsdbQueryDownsample {
         double value = (i + 2.25) / 2;
         assertEquals(value, dp.doubleValue(), 0.00001);
       }
-      assertEquals(30000, dp.timestamp() % 60000);
+      // Timestamp of an interval should be aligned by the interval.
+      assertEquals(0, dp.timestamp() % 60000);
       ++i;
     }
     // Out of 300 values, the first and the last intervals have one value each,
@@ -459,7 +464,8 @@ public class TestTsdbQueryDownsample {
         double value = (i + 2.25) / 2;
         assertEquals(value, dp.doubleValue(), 0.00001);
       }
-      assertEquals(500, dp.timestamp() % 1000);
+      // Timestamp of an interval should be aligned by the interval.
+      assertEquals(0, dp.timestamp() % 1000);
       ++i;
     }
     // Out of 300 values, the first and the last intervals have one value each,
@@ -487,11 +493,12 @@ public class TestTsdbQueryDownsample {
     // (1356998460s, 1.5), (1356998490s, 1.75), ... 75.5, 75.75, 66
     // After aggregation as rate: 0.25/30, (0.25/30, 0.25/30), ...
     // After avg-downsampling: 0.25/30, 0.25/30, 0.25/30, ... 0.25/30
-    long expectedTimestamp = 1356998490000L;
+    long expectedTimestamp = 1356998460000L;
     for (DataPoint dp : dps[0]) {
       assertFalse(dp.isInteger());
       assertEquals(0.00833F, dp.doubleValue(), 0.00001);
-      assertEquals(30000, dp.timestamp() % 60000);
+      // Timestamp of an interval should be aligned by the interval.
+      assertEquals(0, dp.timestamp() % 60000);
       assertEquals(expectedTimestamp, dp.timestamp());
       expectedTimestamp += 60000;
     }
@@ -532,7 +539,8 @@ public class TestTsdbQueryDownsample {
         // of two consecutive intervals.
         assertEquals(0.5F, dp.doubleValue(), 0.00001);
       }
-      assertEquals(500, dp.timestamp() % 1000);
+      // Timestamp of an interval should be aligned by the interval.
+      assertEquals(0, dp.timestamp() % 1000);
       ++i;
     }
     assertEquals(150, dps[0].size());

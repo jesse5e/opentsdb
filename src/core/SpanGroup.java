@@ -698,7 +698,8 @@ final class SpanGroup implements DataPoints {
         }
         iterators[i] = it;
       }
-      return new AggregationIter(iterators, start_time, end_time, aggregator, method, interpolationTimeLimitMillis, rate);
+      return new AggregationIter(iterators, start_time, end_time, aggregator,
+                                 method, interpolationTimeLimitMillis, rate);
     }
 
     /**
@@ -722,6 +723,7 @@ final class SpanGroup implements DataPoints {
                            final Interpolation method,
                            final long interpolationTimeLimitMillis,
                            final boolean rate) {
+      LOG.info(String.format("Aggregating %d iterators", iterators.length));
       this.iterators = iterators;
       this.start_time = start_time;
       this.end_time = end_time;
@@ -741,7 +743,11 @@ final class SpanGroup implements DataPoints {
         try {
           dp = it.next();
         } catch (NoSuchElementException e) {
-          throw new AssertionError("Span #" + i + " is empty! span=" + it);
+          // It should be rare but could happen after downsampling or
+          // rate calculation.
+          LOG.info(String.format("Span #%d is empty! span=%s", i, it));
+          endReached(i);
+          continue;
         }
         //LOG.debug("Creating iterator #" + i);
         if (dp.timestamp() >= start_time) {
@@ -749,8 +755,8 @@ final class SpanGroup implements DataPoints {
           //          + dp.timestamp() + " >= " + start_time);
           putDataPoint(size + i, dp);
         } else {
-          //LOG.debug("No DP in range for #" + i + ": "
-          //          + dp.timestamp() + " < " + start_time);
+          LOG.info(String.format("No DP in range for #%d: %d < %d", i,
+                                 dp.timestamp(), start_time));
           endReached(i);
           continue;
         }

@@ -379,7 +379,7 @@ public class TestTsdbQueryInterpolation {
     // TS2 downsample = 300, 597, 593, ... 405, 401, ... 5, 1
     // TS1 + TS2 = 301, 602, 602, ... 501, 497.2, ... 124.8, 121
     int i = 0;
-    long ts = 1356998400500L;
+    long ts = 1356998400000L;
     for (DataPoint dp : dps[0]) {
       assertEquals(ts, dp.timestamp());
       ts += 1000;
