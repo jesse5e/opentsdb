@@ -30,6 +30,7 @@ dist_noinst_SCRIPTS = src/create_table.sh
 dist_pkgdata_SCRIPTS := src/mygnuplot.sh src/mygnuplot.bat src/opentsdb.conf src/opentsdb-init-d.sh
 dist_noinst_DATA = pom.xml.in
 tsdb_SRC := \
+	src/core/AggregationIter.java	\
 	src/core/Aggregator.java	\
 	src/core/Aggregators.java	\
 	src/core/CompactionQueue.java	\
@@ -136,6 +137,7 @@ pkgdata_DATA = $(tsdb_DEPS) $(jar)
 
 test_SRC := \
 	test/core/SeekableViewsForTest.java \
+	test/core/TestAggregationIter.java \
 	test/core/TestAggregators.java \
 	test/core/TestCompactionQueue.java	\
 	test/core/TestDownsampler.java \
@@ -145,7 +147,6 @@ test_SRC := \
 	test/core/TestRateSpan.java	\
 	test/core/TestRowSeq.java	\
 	test/core/TestSpan.java	\
-	test/core/TestSpanGroupAggregationIter.java \
 	test/core/TestTags.java	\
 	test/core/TestTSDB.java	\
 	test/core/TestTsdbQuery.java	\
