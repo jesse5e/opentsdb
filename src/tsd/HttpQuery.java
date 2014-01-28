@@ -966,7 +966,14 @@ final class HttpQuery {
   private void done() {
     final int processing_time = processingTimeMillis();
     httplatency.add(processing_time);
-    logInfo("HTTP " + request.getUri() + " done in " + processing_time + "ms");
+    String url = request.getUri();
+    String msg = String.format("HTTP %s done in %d ms", url, processing_time);
+    if (url.endsWith("/api/put")) {
+      // NOTE: Suppresses too many log lines from /api/put.
+      LOG.debug(msg);
+    } else {
+      logInfo(msg);
+    }
     deferred.callback(null);
   }
 

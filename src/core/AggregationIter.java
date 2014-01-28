@@ -308,6 +308,7 @@ final class AggregationIter implements SeekableView, DataPoint,
     values = new long[size * 2];
     // Initialize every Iterator, fetch their first values that fall
     // within our time range.
+    int numEmptyIterators = 0;
     for (int i = 0; i < size; i++) {
       SeekableView it = iterators[i];
       it.seek(start_time);
@@ -317,7 +318,7 @@ final class AggregationIter implements SeekableView, DataPoint,
       } catch (NoSuchElementException e) {
         // It should be rare but could happen after downsampling or
         // rate calculation.
-        LOG.info(String.format("Span #%d is empty! span=%s", i, it));
+        ++numEmptyIterators;
         endReached(i);
         continue;
       }
@@ -332,6 +333,10 @@ final class AggregationIter implements SeekableView, DataPoint,
         endReached(i);
         continue;
       }
+    }
+    if (numEmptyIterators > 0) {
+      LOG.info(String.format("%d out of %d iterators are empty!",
+                             numEmptyIterators, iterators.length));
     }
   }
 
