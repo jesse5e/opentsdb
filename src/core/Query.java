@@ -156,12 +156,12 @@ public interface Query {
   void downsample(int interval, Aggregator downsampler);
 
   /**
-   * Sets an interpolation time limit. An interpolated data point will be
+   * Sets an interpolation time window. An interpolated data point will be
    * dropped while aggregating data points of spans if the time gap of
-   * two end-points for the interpolation is bigger than the time limit.
-   * @param millis Interpolation time limit in milliseconds
+   * two end-points for the interpolation is bigger than the window.
+   * @param millis Interpolation time window in milliseconds
    */
-  void setInterpolationTimeLimit(long millis);
+  void setInterpolationWindow(long millis);
 
   /**
    * Sets HBase query start time extension. Makes HBase query begin earlier

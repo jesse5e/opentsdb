@@ -56,7 +56,7 @@ public class TestSpanGroupAggregationIter {
   private long endTimeMs;
   private boolean rate;
   private Aggregator aggregator;
-  private long interpolationTimeLimitMillis;
+  private long interpolationWindowMillis;
   private Interpolation interpolation;
 
 
@@ -66,7 +66,7 @@ public class TestSpanGroupAggregationIter {
     endTimeMs = BASE_TIME + 100000;
     rate = false;
     aggregator = Aggregators.SUM;
-    interpolationTimeLimitMillis = DateTime.parseDuration("1h");
+    interpolationWindowMillis = DateTime.parseDuration("1h");
     interpolation = Interpolation.LERP;
   }
 
@@ -77,7 +77,7 @@ public class TestSpanGroupAggregationIter {
     };
     SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
         startTimeMs, endTimeMs, aggregator, interpolation,
-        interpolationTimeLimitMillis, rate);
+        interpolationWindowMillis, rate);
     for (DataPoint expected: DATA_POINTS_1) {
       assertTrue(sgai.hasNext());
       DataPoint dp = sgai.next();
@@ -95,7 +95,7 @@ public class TestSpanGroupAggregationIter {
     };
     SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
         startTimeMs, endTimeMs, aggregator, interpolation,
-        interpolationTimeLimitMillis, rate);
+        interpolationWindowMillis, rate);
     DataPoint[] expectedDataPoints = new DataPoint[] {
         MutableDataPoint.ofLongValue(BASE_TIME, 40),
         MutableDataPoint.ofLongValue(BASE_TIME + 10000, 50 + 40),
@@ -129,7 +129,7 @@ public class TestSpanGroupAggregationIter {
     endTimeMs = BASE_TIME + 100000;
     SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
         startTimeMs, endTimeMs, aggregator, interpolation,
-        interpolationTimeLimitMillis, rate);
+        interpolationWindowMillis, rate);
     DataPoint[] expectedDataPoints = new DataPoint[] {
         MutableDataPoint.ofDoubleValue(BASE_TIME + 10000L, 7),
         MutableDataPoint.ofDoubleValue(BASE_TIME + 20000L, 7),
@@ -161,7 +161,7 @@ public class TestSpanGroupAggregationIter {
     endTimeMs = BASE_TIME + 100000;
     SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
         startTimeMs, endTimeMs, aggregator, interpolation,
-        interpolationTimeLimitMillis, rate);
+        interpolationWindowMillis, rate);
     Downsampler downsampler = new Downsampler(sgai, 15000, SUM);
     // See the expectedDataPoints at testSpanGroup_manySpans for the output of
     // Aggregator.
@@ -192,12 +192,12 @@ public class TestSpanGroupAggregationIter {
     };
     SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
         BASE_TIME + 00000L, endTimeMs, aggregator, interpolation,
-        interpolationTimeLimitMillis, rate);
+        interpolationWindowMillis, rate);
     assertTrue(sgai.hasNext());
     iterators[0] = new BuggySeekableView(DATA_POINTS_1);
     SpanGroup.AggregationIter buggyItr = new SpanGroup.AggregationIter(
         iterators, BASE_TIME + 01000L, endTimeMs, aggregator, interpolation,
-        interpolationTimeLimitMillis, rate);
+        interpolationWindowMillis, rate);
     assertFalse(buggyItr.hasNext());
   }
 
@@ -211,7 +211,7 @@ public class TestSpanGroupAggregationIter {
     };
     SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
         BASE_TIME + 00000L, endTimeMs, aggregator, interpolation,
-        interpolationTimeLimitMillis, rate);
+        interpolationWindowMillis, rate);
     for (DataPoint expected: DATA_POINTS_1) {
       assertTrue(sgai.hasNext());
       DataPoint dp = sgai.next();
@@ -247,7 +247,7 @@ public class TestSpanGroupAggregationIter {
                                     100);
     SpanGroup.AggregationIter sgai = new SpanGroup.AggregationIter(iterators,
         1356990000000L, 1356993600000L, aggregator, interpolation,
-        interpolationTimeLimitMillis, rate);
+        interpolationWindowMillis, rate);
     final long startTimeNano = System.nanoTime();
     long totalDataPoints = 0;
     long timestampCheckSum = 0;

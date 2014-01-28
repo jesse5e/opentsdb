@@ -39,8 +39,8 @@ import net.opentsdb.utils.DateTime;
  */
 public final class TSSubQuery {
 
-  /** Sub query option to specify the interpolation time limit. */
-  public static final String PREFIX_INTERPOLATION_TIME_LIMIT = "itl-";
+  /** Sub query option to specify the interpolation window. */
+  public static final String PREFIX_INTERPOLATION_WINDOW = "iw-";
   /** Sub query option to extend HBase query time range. */
   public static final String PREFIX_HBASE_TIME_EXTENSION = "ext-";
 
@@ -48,14 +48,14 @@ public final class TSSubQuery {
   private String aggregator;
 
   /**
-   * Interpolation time limit. An interpolated data point will be
+   * Interpolation time window. An interpolated data point will be
    * dropped while aggregating data points of spans if the time gap of
-   * two end-points for the interpolation is bigger than the time limit.
+   * two end-points for the interpolation is bigger than the window.
    */
-  private String interpolationTimeLimit;
+  private String interpolationWindowOption;
 
-  /** Interpolation time limit in milliseconds */
-  private long interpolationTimeLimitMillis = Const.MAX_TIMESPAN_MS;
+  /** Interpolation window in milliseconds */
+  private long interpolationWindowMillis = Const.MAX_TIMESPAN_MS;
 
   /**
    * Extends user query time range with the specified amount to build
@@ -142,10 +142,10 @@ public final class TSSubQuery {
     }
     buf.append("], agg=")
       .append(aggregator)
-      .append(", interpolationTimeLimit='")
-      .append(interpolationTimeLimit)
-      .append("', interpolationTimeLimitMillis=")
-      .append(interpolationTimeLimitMillis)
+      .append(", interpolationWindowOption='")
+      .append(interpolationWindowOption)
+      .append("', interpolationWindowMillis=")
+      .append(interpolationWindowMillis)
       .append(", hbaseTimeExtension='")
       .append(hbaseTimeExtension)
       .append("', hbaseTimeStartExtensionMillis=")
@@ -208,31 +208,32 @@ public final class TSSubQuery {
       downsample_interval = DateTime.parseDuration(
           downsample.substring(0, dash));
     }
-    parseInterpolationTimeLimit();
+    parseInterpolationWindow();
     parseHBaseTimeExtension();
   }
 
   /**
-   * Parses interpolation time limit.
+   * Parses interpolation window.
    * @throws IllegalArgumentException if we failed to parse.
    */
-  private void parseInterpolationTimeLimit() {
-    if (interpolationTimeLimit == null || interpolationTimeLimit.isEmpty()) {
+  private void parseInterpolationWindow() {
+    if (interpolationWindowOption == null ||
+        interpolationWindowOption.isEmpty()) {
       return;
     }
-    if (!interpolationTimeLimit.startsWith(PREFIX_INTERPOLATION_TIME_LIMIT)) {
+    if (!interpolationWindowOption.startsWith(PREFIX_INTERPOLATION_WINDOW)) {
       throw new IllegalArgumentException(
-          String.format("Invalid interpolation time limit specifier '%s'",
-              interpolationTimeLimit));
+          String.format("Invalid interpolation window specifier '%s'",
+              interpolationWindowOption));
     }
     try {
-      String itl = interpolationTimeLimit.substring(
-          PREFIX_INTERPOLATION_TIME_LIMIT.length());
-      interpolationTimeLimitMillis = DateTime.parseDuration(itl);
+      String interpolationWindow = interpolationWindowOption.substring(
+          PREFIX_INTERPOLATION_WINDOW.length());
+      interpolationWindowMillis = DateTime.parseDuration(interpolationWindow);
     } catch (IllegalArgumentException ignored) {
       throw new IllegalArgumentException(
-          String.format("Invalid interpolation time limit specifier '%s' - " +
-                        "error in time format", interpolationTimeLimit));
+          String.format("Invalid interpolation window specifier '%s' - " +
+                        "error in time format", interpolationWindowOption));
     }
   }
 
@@ -255,7 +256,7 @@ public final class TSSubQuery {
     if (tokens.length > 2) {
       throw new IllegalArgumentException(
           String.format("Invalid hbase time extension specifier '%s' - " +
-                        "error in time format", interpolationTimeLimit));
+                        "error in time format", interpolationWindowOption));
     }
     try {
       if (tokens.length > 0 && !tokens[0].isEmpty() ) {
@@ -267,7 +268,7 @@ public final class TSSubQuery {
     } catch (IllegalArgumentException ignored) {
       throw new IllegalArgumentException(
           String.format("Invalid hbase time extension specifier '%s' - " +
-                        "error in time format", interpolationTimeLimit));
+                        "error in time format", interpolationWindowOption));
     }
   }
 
@@ -276,9 +277,9 @@ public final class TSSubQuery {
     return this.agg;
   }
 
-  /** @return the interpolation time limit in milliseconds */
-  public long interpolationTimeLimitMillis() {
-    return this.interpolationTimeLimitMillis;
+  /** @return the interpolation window in milliseconds */
+  public long interpolationWindowMillis() {
+    return this.interpolationWindowMillis;
   }
 
   /** @return HBase query start time extension amount in milliseconds */
@@ -306,9 +307,9 @@ public final class TSSubQuery {
     return aggregator;
   }
 
-  /** @return the interpolation time limit */
-  public String getInterpolationTimeLimit() {
-    return interpolationTimeLimit;
+  /** @return the interpolation window option in string */
+  public String getInterpolationWindowOption() {
+    return interpolationWindowOption;
   }
 
   /** @return the HBase time extension */
@@ -355,9 +356,9 @@ public final class TSSubQuery {
     this.aggregator = aggregator;
   }
 
-  /** @param interpolationTimeLimit an interpolation time limit */
-  public void setInterpolationTimeLimit(String interpolationTimeLimit) {
-    this.interpolationTimeLimit = interpolationTimeLimit;
+  /** @param interpolationWindowOption an interpolation time window */
+  public void setInterpolationWindowOption(String interpolationWindowOption) {
+    this.interpolationWindowOption = interpolationWindowOption;
   }
 
   /** @param hbaseTimeExtension HBase query time extension */

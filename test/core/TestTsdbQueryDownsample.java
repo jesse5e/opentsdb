@@ -181,7 +181,7 @@ public class TestTsdbQueryDownsample {
 
   @Test
   public void testScanTime_bigDownsampleTime() throws Exception {
-    query.setInterpolationTimeLimit(DateTime.parseDuration("110s"));
+    query.setInterpolationWindow(DateTime.parseDuration("110s"));
     int downsampleInterval = (int)DateTime.parseDuration("200s");
     query.downsample(downsampleInterval, Aggregators.SUM);
     query.setStartTime(1356998400);
@@ -202,7 +202,7 @@ public class TestTsdbQueryDownsample {
 
   @Test
   public void testScanTime_customerOverride() throws Exception {
-    query.setInterpolationTimeLimit(DateTime.parseDuration("110s"));
+    query.setInterpolationWindow(DateTime.parseDuration("110s"));
     query.setHbaseTimeStartExtensionMillis(DateTime.parseDuration("17s"));
     query.setHbaseTimeEndExtensionMillis(DateTime.parseDuration("37s"));
     int downsampleInterval = (int)DateTime.parseDuration("200s");

@@ -112,12 +112,14 @@ final class TsdbQuery implements Query {
   /** Aggregator function to use. */
   private Aggregator aggregator;
 
+  // TODO: Use a unit-safe way to express a time interval instead of relying
+  // on integer and the suffix of a variable name like "Millis".
   /**
-   * Interpolation time limit. An interpolated data point will be
+   * Interpolation time window. An interpolated data point will be
    * dropped while aggregating data points of spans if the time gap of
-   * two end-points for the interpolation is bigger than the time limit.
+   * two end-points for the interpolation is bigger than the window.
    */
-  private long interpolationTimeLimitMillis = Const.MAX_TIMESPAN_MS;
+  private long interpolationWindowMillis = Const.MAX_TIMESPAN_MS;
 
   /**
    * Makes HBase query begin earlier than the start timestamp of a user query
@@ -478,7 +480,7 @@ final class TsdbQuery implements Query {
                                               rate, rate_options,
                                               aggregator,
                                               sample_interval_ms, downsampler,
-                                              interpolationTimeLimitMillis);
+                                              interpolationWindowMillis);
         return new SpanGroup[] { group };
       }
   
@@ -523,7 +525,7 @@ final class TsdbQuery implements Query {
                                    getScanEndTimeSeconds(),
                                    null, rate, rate_options, aggregator,
                                    sample_interval_ms, downsampler,
-                                   interpolationTimeLimitMillis);
+                                   interpolationWindowMillis);
           // Copy the array because we're going to keep `group' and overwrite
           // its contents. So we want the collection to have an immutable copy.
           final byte[] group_copy = new byte[group.length];
@@ -613,7 +615,7 @@ final class TsdbQuery implements Query {
       // requires a data point in the interpolation window but out side of the
       // first downsampling window.
       extensionSecs += TimeUnit.MILLISECONDS.toSeconds(
-          interpolationTimeLimitMillis);
+          interpolationWindowMillis);
       // NOTE: For the rate of changes, we are adding another interpolation
       // window because we need a rate out side of the first downsampling
       // window and a rate requires two data points. So we are adding
@@ -623,7 +625,7 @@ final class TsdbQuery implements Query {
       // TODO: Remove the addition interpolation window for the rate.
       if (rate) {
         extensionSecs += TimeUnit.MILLISECONDS.toSeconds(
-            interpolationTimeLimitMillis);
+            interpolationWindowMillis);
       }
     }
     startTimeSecs -= extensionSecs;
@@ -669,7 +671,7 @@ final class TsdbQuery implements Query {
       // to make the last interpolated data of the last downsampling window
       // valid
       extensionSecs += TimeUnit.MILLISECONDS.toSeconds(
-          interpolationTimeLimitMillis);
+          interpolationWindowMillis);
     }
     endSeconds += extensionSecs;
     // Jan. 2014: The original implementation added 1 to the end time to
@@ -936,12 +938,12 @@ final class TsdbQuery implements Query {
   }
 
   /**
-   * Sets interpolation time limit.
-   * @param millis Interpolation time limit in millis.
+   * Sets interpolation time window.
+   * @param millis Interpolation time window in millis.
    */
   @Override
-  public void setInterpolationTimeLimit(long millis) {
-    interpolationTimeLimitMillis = millis;
+  public void setInterpolationWindow(long millis) {
+    interpolationWindowMillis = millis;
   }
 
   /**

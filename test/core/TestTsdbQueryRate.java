@@ -143,7 +143,7 @@ public class TestTsdbQueryRate {
     tags.put("host", "web01");
     query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM,
                         true, new RateOptions());
-    query.setInterpolationTimeLimit(DateTime.parseDuration("100s"));
+    query.setInterpolationWindow(DateTime.parseDuration("100s"));
     int downsampleInterval = (int)DateTime.parseDuration("60s");
     query.downsample(downsampleInterval, Aggregators.SUM);
     query.setStartTime(1356998400);
@@ -168,7 +168,7 @@ public class TestTsdbQueryRate {
     tags.put("host", "web01");
     query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM,
                         true, new RateOptions());
-    query.setInterpolationTimeLimit(DateTime.parseDuration("110s"));
+    query.setInterpolationWindow(DateTime.parseDuration("110s"));
     int downsampleInterval = (int)DateTime.parseDuration("60s");
     query.downsample(downsampleInterval, Aggregators.SUM);
     query.setStartTime(2356998400000L);
@@ -193,7 +193,7 @@ public class TestTsdbQueryRate {
     tags.put("host", "web01");
     query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM,
                         true, new RateOptions());
-    query.setInterpolationTimeLimit(DateTime.parseDuration("110s"));
+    query.setInterpolationWindow(DateTime.parseDuration("110s"));
     int downsampleInterval = (int)DateTime.parseDuration("200s");
     query.downsample(downsampleInterval, Aggregators.SUM);
     query.setStartTime(1356998400);
@@ -218,7 +218,7 @@ public class TestTsdbQueryRate {
     tags.put("host", "web01");
     query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM,
                         true, new RateOptions());
-    query.setInterpolationTimeLimit(DateTime.parseDuration("110s"));
+    query.setInterpolationWindow(DateTime.parseDuration("110s"));
     query.setHbaseTimeStartExtensionMillis(DateTime.parseDuration("17s"));
     query.setHbaseTimeEndExtensionMillis(DateTime.parseDuration("37s"));
     int downsampleInterval = (int)DateTime.parseDuration("200s");
@@ -265,15 +265,15 @@ public class TestTsdbQueryRate {
     tags.put("host", "web01");
     long timestamp = 1356998400;
     tsdb.addPoint("sys.cpu.user", timestamp, 0, tags).joinUninterruptibly();
-    // The rate is 30/30 and not valid for 20s interpolation time limit.
+    // The rate is 30/30 and not valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 30, 30, tags).joinUninterruptibly();
-    // The rate is 30/30 and not valid for 20s interpolation time limit.
+    // The rate is 30/30 and not valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 30, 60, tags).joinUninterruptibly();
-    // The rate is 30/15 and valid for 20s interpolation time limit.
+    // The rate is 30/15 and valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 15, 90, tags).joinUninterruptibly();
-    // The rate is 30/15 and valid for 20s interpolation time limit.
+    // The rate is 30/15 and valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 15, 120, tags).joinUninterruptibly();
-    // The rate is 30/30 and not valid for 20s interpolation time limit.
+    // The rate is 30/30 and not valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 30, 150, tags).joinUninterruptibly();
     // The rate is 15/30 and valid because it is the last one.
     tsdb.addPoint("sys.cpu.user", timestamp += 30, 165, tags).joinUninterruptibly();
@@ -282,7 +282,7 @@ public class TestTsdbQueryRate {
     query.setStartTime(1356998400);
     query.setEndTime(1357041600);
     query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM, true, ro);
-    query.setInterpolationTimeLimit(DateTime.parseDuration("20s"));
+    query.setInterpolationWindow(DateTime.parseDuration("20s"));
     final DataPoints[] dps = query.run();
     assertEquals(3, dps[0].size());
 
@@ -315,15 +315,15 @@ public class TestTsdbQueryRate {
     tags.put("host", "web01");
     long timestamp = 1356998400;
     tsdb.addPoint("sys.cpu.user", timestamp, 0, tags).joinUninterruptibly();
-    // The rate is 30/30 and not valid for 20s interpolation time limit.
+    // The rate is 30/30 and not valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 30, 30, tags).joinUninterruptibly();
-    // The rate is 30/30 and not valid for 20s interpolation time limit.
+    // The rate is 30/30 and not valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 30, 60, tags).joinUninterruptibly();
-    // The rate is 30/15 and valid for 20s interpolation time limit.
+    // The rate is 30/15 and valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 15, 90, tags).joinUninterruptibly();
-    // The rate is 30/15 and valid for 20s interpolation time limit.
+    // The rate is 30/15 and valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 15, 120, tags).joinUninterruptibly();
-    // The rate is 30/30 and not valid for 20s interpolation time limit.
+    // The rate is 30/30 and not valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 30, 150, tags).joinUninterruptibly();
     // The rate is 15/30 and valid because it is the last one.
     tsdb.addPoint("sys.cpu.user", timestamp += 30, 165, tags).joinUninterruptibly();
@@ -332,15 +332,15 @@ public class TestTsdbQueryRate {
     tags.put("host", "web02");
     timestamp = 1356998415;
     tsdb.addPoint("sys.cpu.user", timestamp, 0, tags).joinUninterruptibly();
-    // The rate is 30/30 and not valid for 20s interpolation time limit.
+    // The rate is 30/30 and not valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 30, 30, tags).joinUninterruptibly();
-    // The rate is -30/30 and not valid for 20s interpolation time limit.
+    // The rate is -30/30 and not valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 30, 0, tags).joinUninterruptibly();
-    // The rate is 30/15 and valid for 20s interpolation time limit.
+    // The rate is 30/15 and valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 15, 30, tags).joinUninterruptibly();
-    // The rate is 30/15 and valid for 20s interpolation time limit.
+    // The rate is 30/15 and valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 15, 60, tags).joinUninterruptibly();
-    // The rate is 30/30 and not valid for 20s interpolation time limit.
+    // The rate is 30/30 and not valid for 20s interpolation window.
     tsdb.addPoint("sys.cpu.user", timestamp += 30, 90, tags).joinUninterruptibly();
     // The rate is 15/30 and valid because it is the last one.
     tsdb.addPoint("sys.cpu.user", timestamp += 30, 105, tags).joinUninterruptibly();
@@ -350,7 +350,7 @@ public class TestTsdbQueryRate {
     query.setStartTime(1356998400);
     query.setEndTime(1357041600);
     query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM, true, ro);
-    query.setInterpolationTimeLimit(DateTime.parseDuration("20s"));
+    query.setInterpolationWindow(DateTime.parseDuration("20s"));
     final DataPoints[] dps = query.run();
     assertEquals(5, dps[0].size());
 

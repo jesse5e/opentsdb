@@ -139,7 +139,7 @@ public class TestTsdbQueryInterpolation {
 
   @Test
   public void testScanStartTime_bigInterpolationTime() throws Exception {
-    query.setInterpolationTimeLimit(DateTime.parseDuration("12345s"));
+    query.setInterpolationWindow(DateTime.parseDuration("12345s"));
     int downsampleInterval = (int)DateTime.parseDuration("200s");
     query.downsample(downsampleInterval, Aggregators.SUM);
     query.setStartTime(1356998400);
@@ -192,7 +192,7 @@ public class TestTsdbQueryInterpolation {
   }
 
   @Test
-  public void runInterpolationSeconds_timeLimit() throws Exception {
+  public void runInterpolationSeconds_timeWindow() throws Exception {
     prepareLongDataSecond();
     HashMap<String, String> tags = new HashMap<String, String>(1);
     tags.clear();
@@ -201,7 +201,7 @@ public class TestTsdbQueryInterpolation {
     query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM, false);
     // All the interpolation data points will be dropped because the time gap
     // of them are bigger than 20 seconds.
-    query.setInterpolationTimeLimit(20000);
+    query.setInterpolationWindow(20000);
     final DataPoints[] dps = query.run();
     assertNotNull(dps);
     assertEquals("sys.cpu.user", dps[0].metricName());
@@ -229,7 +229,7 @@ public class TestTsdbQueryInterpolation {
   }
 
   @Test
-  public void runInterpolation_doubeValueWithTimeLimit() throws Exception {
+  public void runInterpolation_doubeValueWithTimeWindow() throws Exception {
     prepareDoubleDataSecond();
     HashMap<String, String> tags = new HashMap<String, String>(1);
     tags.clear();
@@ -238,7 +238,7 @@ public class TestTsdbQueryInterpolation {
     query.setTimeSeries("sys.cpu.user", tags, Aggregators.SUM, false);
     // All the interpolation data points will be dropped because the time gap
     // of them are bigger than 20 seconds.
-    query.setInterpolationTimeLimit(20000);
+    query.setInterpolationWindow(20000);
     final DataPoints[] dps = query.run();
     assertNotNull(dps);
     assertEquals("sys.cpu.user", dps[0].metricName());

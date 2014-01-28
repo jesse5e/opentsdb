@@ -38,7 +38,7 @@ public final class TestTSSubQuery {
     assertEquals(Aggregators.SUM, sub.aggregator());
     assertEquals(Aggregators.AVG, sub.downsampler());
     assertEquals(300000, sub.downsampleInterval());
-    assertEquals(Const.MAX_TIMESPAN_MS, sub.interpolationTimeLimitMillis());
+    assertEquals(Const.MAX_TIMESPAN_MS, sub.interpolationWindowMillis());
   }
 
   @Test
@@ -55,7 +55,7 @@ public final class TestTSSubQuery {
     assertEquals(Aggregators.SUM, sub.aggregator());
     assertEquals(Aggregators.AVG, sub.downsampler());
     assertEquals(300000, sub.downsampleInterval());
-    assertEquals(Const.MAX_TIMESPAN_MS, sub.interpolationTimeLimitMillis());
+    assertEquals(Const.MAX_TIMESPAN_MS, sub.interpolationWindowMillis());
   }
 
   @Test
@@ -116,10 +116,10 @@ public final class TestTSSubQuery {
   }
 
   @Test
-  public void validateMetricSubQuery_interpolationTimeLimit() {
+  public void validateMetricSubQuery_interpolationWindow() {
     TSSubQuery sub = getMetricForValidate();
-    sub.setInterpolationTimeLimit("itl-7m");
-    assertEquals("itl-7m", sub.getInterpolationTimeLimit());
+    sub.setInterpolationWindowOption("iw-7m");
+    assertEquals("iw-7m", sub.getInterpolationWindowOption());
     sub.validateAndSetQuery();
     assertEquals("sys.cpu.0", sub.getMetric());
     assertEquals("*", sub.getTags().get("host"));
@@ -127,15 +127,15 @@ public final class TestTSSubQuery {
     assertEquals(Aggregators.SUM, sub.aggregator());
     assertEquals(Aggregators.AVG, sub.downsampler());
     assertEquals(300000, sub.downsampleInterval());
-    assertEquals(420000, sub.interpolationTimeLimitMillis());
+    assertEquals(420000, sub.interpolationWindowMillis());
   }
 
   @Test
-  public void validateTsuid_interpolationTimeLimit() {
+  public void validateTsuid_interpolationWindow() {
     TSSubQuery sub = getMetricForValidate();
     sub.setMetric(null);
-    sub.setInterpolationTimeLimit("itl-7m");
-    assertEquals("itl-7m", sub.getInterpolationTimeLimit());
+    sub.setInterpolationWindowOption("iw-7m");
+    assertEquals("iw-7m", sub.getInterpolationWindowOption());
     ArrayList<String> tsuids = new ArrayList<String>(1);
     tsuids.add("ABCD");
     sub.setTsuids(tsuids);
@@ -146,7 +146,7 @@ public final class TestTSSubQuery {
     assertEquals(Aggregators.SUM, sub.aggregator());
     assertEquals(Aggregators.AVG, sub.downsampler());
     assertEquals(300000, sub.downsampleInterval());
-    assertEquals(420000, sub.interpolationTimeLimitMillis());
+    assertEquals(420000, sub.interpolationWindowMillis());
   }
 
   @Test

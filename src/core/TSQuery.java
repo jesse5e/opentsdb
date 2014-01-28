@@ -152,7 +152,7 @@ public final class TSQuery {
         query.setTimeSeries(sub.getMetric(), sub.getTags(), sub.aggregator(), 
             sub.getRate());
       }
-      query.setInterpolationTimeLimit(sub.interpolationTimeLimitMillis());
+      query.setInterpolationWindow(sub.interpolationWindowMillis());
       query.setHbaseTimeStartExtensionMillis(sub.hbaseTimeStartExtensionMillis());
       query.setHbaseTimeEndExtensionMillis(sub.hbaseTimeEndExtensionMillis());
       queries[i] = query;

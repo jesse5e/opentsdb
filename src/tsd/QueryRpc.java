@@ -209,10 +209,10 @@ final class QueryRpc implements HttpRpc {
    * @throws BadRequestException if there is no tokens or any unknown token.
    */
   static private TSSubQuery parseAggregatorParam(final String[] tokens) {
-    // Syntax = agg:[itl-interval:][interval-agg:][rate:][ext-nnn.mmm:]
+    // Syntax = agg:[iw-interval:][interval-agg:][rate:][ext-nnn.mmm:]
     // where the parts in square brackets `[' .. `]' are optional.
     // agg is the name of an aggregation function. See {@link Aggregators}.
-    // itl-interval is a time limit of interpolation. See {@link TSSubQuery}.
+    // iw-interval is a time window of interpolation. See {@link TSSubQuery}.
     // interval-agg is a downsample interval and a downsample function.
     // rate is a flag to enable change rate calculation of time series data.
     // ext is to specify amount of time to extend HBase time query time range.
@@ -234,8 +234,8 @@ final class QueryRpc implements HttpRpc {
           subQuery.setRateOptions(QueryRpc.parseRateOptions(true, token));
         }
       } else if (token.toLowerCase().startsWith(
-          TSSubQuery.PREFIX_INTERPOLATION_TIME_LIMIT)) {
-        subQuery.setInterpolationTimeLimit(token);
+          TSSubQuery.PREFIX_INTERPOLATION_WINDOW)) {
+        subQuery.setInterpolationWindowOption(token);
       } else if (token.toLowerCase().startsWith(
           TSSubQuery.PREFIX_HBASE_TIME_EXTENSION)) {
         subQuery.setHbaseTimeExtension(token);

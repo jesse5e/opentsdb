@@ -115,16 +115,16 @@ public final class TestTSQuery {
     verify(mockQuery).downsample(300000, sub.downsampler());
     verify(mockQuery).setTimeSeries("sys.cpu.0", sub.getTags(),
                                     sub.aggregator(), sub.getRate());
-    verify(mockQuery).setInterpolationTimeLimit(Const.MAX_TIMESPAN_MS);
+    verify(mockQuery).setInterpolationWindow(Const.MAX_TIMESPAN_MS);
     verify(mockQuery).setHbaseTimeStartExtensionMillis(-1);
     verify(mockQuery).setHbaseTimeEndExtensionMillis(-1);
   }
 
   @Test
-  public void testBuildQueries__interpolationTimeLimit() throws IOException {
+  public void testBuildQueries__interpolationWindow() throws IOException {
     TSQuery q = this.getMetricForValidate();
     TSSubQuery sub = q.getQueries().get(0);
-    sub.setInterpolationTimeLimit("itl-7m");
+    sub.setInterpolationWindowOption("iw-7m");
     q.validateAndSetQuery();
     TSDB mockTsdb = PowerMockito.mock(TSDB.class);
     Query mockQuery = mock(Query.class);
@@ -137,7 +137,7 @@ public final class TestTSQuery {
     verify(mockQuery).downsample(300000, sub.downsampler());
     verify(mockQuery).setTimeSeries("sys.cpu.0", sub.getTags(),
                                     sub.aggregator(), sub.getRate());
-    verify(mockQuery).setInterpolationTimeLimit(420000);
+    verify(mockQuery).setInterpolationWindow(420000);
     verify(mockQuery).setHbaseTimeStartExtensionMillis(-1);
     verify(mockQuery).setHbaseTimeEndExtensionMillis(-1);
   }
@@ -146,7 +146,7 @@ public final class TestTSQuery {
   public void testBuildQueries__hbaseTimeExtension() throws IOException {
     TSQuery q = this.getMetricForValidate();
     TSSubQuery sub = q.getQueries().get(0);
-    sub.setInterpolationTimeLimit("itl-7m");
+    sub.setInterpolationWindowOption("iw-7m");
     sub.setHbaseTimeExtension("ext-3m.5s");
     q.validateAndSetQuery();
     TSDB mockTsdb = PowerMockito.mock(TSDB.class);
@@ -160,7 +160,7 @@ public final class TestTSQuery {
     verify(mockQuery).downsample(300000, sub.downsampler());
     verify(mockQuery).setTimeSeries("sys.cpu.0", sub.getTags(),
                                     sub.aggregator(), sub.getRate());
-    verify(mockQuery).setInterpolationTimeLimit(420000);
+    verify(mockQuery).setInterpolationWindow(420000);
     verify(mockQuery).setHbaseTimeStartExtensionMillis(180000);
     verify(mockQuery).setHbaseTimeEndExtensionMillis(5000);
   }

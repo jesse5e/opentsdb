@@ -95,11 +95,11 @@ final class SpanGroup implements DataPoints {
   private final Aggregator aggregator;
 
   /**
-   * Interpolation time limit. An interpolated data point will be
+   * Interpolation time window. An interpolated data point will be
    * dropped while aggregating data points of spans if the time gap of
-   * two end-points for the interpolation is bigger than the time limit.
+   * two end-points for the interpolation is bigger than the window.
    */
-  private long interpolationTimeLimitMillis = Long.MAX_VALUE;
+  private long interpolationWindowMs = Long.MAX_VALUE;
 
   /**
    * Downsampling function to use, if any (can be {@code null}).
@@ -130,10 +130,10 @@ final class SpanGroup implements DataPoints {
             final boolean rate,
             final Aggregator aggregator,
             final int interval, final Aggregator downsampler,
-            final long interpolationTimeLimitMillis) {
+            final long interpolationWindowMs) {
     this(start_time, end_time, spans, rate, new RateOptions(false,
         Long.MAX_VALUE, RateOptions.DEFAULT_RESET_VALUE), aggregator, interval,
-        downsampler, interpolationTimeLimitMillis);
+        downsampler, interpolationWindowMs);
   }
 
   /**
@@ -158,7 +158,7 @@ final class SpanGroup implements DataPoints {
             final boolean rate, final RateOptions rate_options,
             final Aggregator aggregator,
             final int interval, final Aggregator downsampler,
-            final long interpolationTimeLimitMillis) {
+            final long interpolationWindowMs) {
      this.start_time = (start_time & Const.SECOND_MASK) == 0 ? 
          start_time * 1000 : start_time;
      this.end_time = (end_time & Const.SECOND_MASK) == 0 ? 
@@ -171,7 +171,7 @@ final class SpanGroup implements DataPoints {
      this.rate = rate;
      this.rate_options = rate_options;
      this.aggregator = aggregator;
-     this.interpolationTimeLimitMillis = interpolationTimeLimitMillis;
+     this.interpolationWindowMs = interpolationWindowMs;
      this.downsampler = downsampler;
      this.sample_interval = interval;
   }
@@ -389,13 +389,13 @@ final class SpanGroup implements DataPoints {
     if (downsampler == null) {
       // TODO: Pass span iterators rather than unnecessary sampling interval.
       return AggregationIter.create(spans, start_time, end_time, aggregator,
-                                    interpolation, interpolationTimeLimitMillis,
+                                    interpolation, interpolationWindowMs,
                                     downsampler, FIXED_INTERVAL_MILLIS,
                                     rate, rate_options);
     } if (sample_interval <= FIXED_INTERVAL_MILLIS) {
       // Honors the given sample interval if it is too small.
       return AggregationIter.create(spans, start_time, end_time, aggregator,
-                                    interpolation, interpolationTimeLimitMillis,
+                                    interpolation, interpolationWindowMs,
                                     downsampler, sample_interval,
                                     rate, rate_options);
     } else {
@@ -406,7 +406,7 @@ final class SpanGroup implements DataPoints {
       // 3. Downsamples aggregated values.
       SeekableView aggregationIter = AggregationIter.create(
           spans, start_time, end_time, aggregator,
-          interpolation, interpolationTimeLimitMillis,
+          interpolation, interpolationWindowMs,
           downsampler, FIXED_INTERVAL_MILLIS,
           rate, rate_options);
       return new Downsampler(aggregationIter, sample_interval, downsampler);
@@ -591,11 +591,11 @@ final class SpanGroup implements DataPoints {
     private final Interpolation method;
 
     /**
-     * Interpolation time limit. An interpolated data point will be
+     * Interpolation time window. An interpolated data point will be
      * dropped while aggregating data points of spans if the time gap of
-     * two end-points for the interpolation is bigger than the time limit.
+     * two end-points for the interpolation is bigger than the window.
      */
-    private final long interpolationTimeLimitMillis;
+    private final long interpolationWindowMillis;
 
     /** If true, use rate of change instead of actual values. */
     private final boolean rate;
@@ -663,8 +663,8 @@ final class SpanGroup implements DataPoints {
      * ignored.
      * @param aggregator The aggregation function to use.
      * @param method Interpolation method to use when aggregating time series
-     * @param interpolationTimeLimitMillis Interpolation is valid only in this
-     * time limit.
+     * @param interpolationWindowMillis Interpolation is valid only in this
+     * time window.
      * @param downsampler Aggregation function to use to group data points
      * within an interval.
      * @param intervalMillis Number of milliseconds wanted between each data
@@ -679,7 +679,7 @@ final class SpanGroup implements DataPoints {
         final long start_time, final long end_time,
         final Aggregator aggregator,
         final Interpolation method,
-        final long interpolationTimeLimitMillis,
+        final long interpolationWindowMillis,
         final Aggregator downsampler,
         final int intervalMillis,
         final boolean rate, final RateOptions rate_options) {
@@ -693,13 +693,13 @@ final class SpanGroup implements DataPoints {
           it = spans.get(i).downsampler(intervalMillis, downsampler);
         }
         if (rate) {
-          it = new RateSpan(it, rate_options, interpolationTimeLimitMillis,
+          it = new RateSpan(it, rate_options, interpolationWindowMillis,
               end_time);
         }
         iterators[i] = it;
       }
       return new AggregationIter(iterators, start_time, end_time, aggregator,
-                                 method, interpolationTimeLimitMillis, rate);
+                                 method, interpolationWindowMillis, rate);
     }
 
     /**
@@ -712,8 +712,8 @@ final class SpanGroup implements DataPoints {
      * ignored.
      * @param aggregator The aggregation function to use.
      * @param method Interpolation method to use when aggregating time series
-     * @param interpolationTimeLimitMillis Interpolation is valid only in this
-     * time limit.
+     * @param interpolationWindowMillis Interpolation is valid only in this
+     * time window.
      * @param rate If {@code true}, the rate of the series will be used instead
      * of the actual values.
      */
@@ -721,7 +721,7 @@ final class SpanGroup implements DataPoints {
                            final long start_time, final long end_time,
                            final Aggregator aggregator,
                            final Interpolation method,
-                           final long interpolationTimeLimitMillis,
+                           final long interpolationWindowMillis,
                            final boolean rate) {
       LOG.info(String.format("Aggregating %d iterators", iterators.length));
       this.iterators = iterators;
@@ -729,7 +729,7 @@ final class SpanGroup implements DataPoints {
       this.end_time = end_time;
       this.aggregator = aggregator;
       this.method = method;
-      this.interpolationTimeLimitMillis = interpolationTimeLimitMillis;
+      this.interpolationWindowMillis = interpolationWindowMillis;
       this.rate = rate;
       final int size = iterators.length;
       timestamps = new long[size * 2];
@@ -870,7 +870,7 @@ final class SpanGroup implements DataPoints {
      * @param i The index in {@link #iterators} of the iterator.
      */
     private void moveToNext(final int i) {
-      // TODO: Move to the next valid rate considering interpolation time limit.
+      // TODO: Move to the next valid rate considering interpolation window.
       final int next = iterators.length + i;
       timestamps[i] = timestamps[next];
       values[i] = values[next];
@@ -989,7 +989,7 @@ final class SpanGroup implements DataPoints {
                                "of %d and %d", currentTimestamp, t0, t1));
         return false;
       }
-      if ((t1 - t0) <= interpolationTimeLimitMillis) {
+      if ((t1 - t0) <= interpolationWindowMillis) {
         // Should aggregate the interpolated data point of data points
         // close enough together in time.
         return true;
