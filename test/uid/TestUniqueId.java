@@ -46,6 +46,7 @@ import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.inOrder;
@@ -353,7 +354,7 @@ public final class TestUniqueId {
 
     // Start the race when answering A's first Get.
     try {
-      PowerMockito.doAnswer(the_race).when(d).joinUninterruptibly();
+      PowerMockito.doAnswer(the_race).when(d).joinUninterruptibly(anyLong());
     } catch (Exception e) {
       fail("Should never happen: " + e);
     }

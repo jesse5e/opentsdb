@@ -341,7 +341,7 @@ final class TsdbQuery implements Query {
    */
   public DataPoints[] run() throws HBaseException {
     try {
-      return runAsync().joinUninterruptibly();
+      return BadTimeout.hour(runAsync());
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {

@@ -33,6 +33,7 @@ tsdb_SRC := \
 	src/core/AggregationIter.java	\
 	src/core/Aggregator.java	\
 	src/core/Aggregators.java	\
+	src/core/BadTimeout.java	\
 	src/core/CompactionQueue.java	\
 	src/core/Const.java	\
 	src/core/DataPoint.java	\

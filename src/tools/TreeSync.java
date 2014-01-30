@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import net.opentsdb.core.BadTimeout;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.meta.TSMeta;
 import net.opentsdb.tree.Tree;
@@ -100,7 +101,7 @@ final class TreeSync extends Thread {
     // start the process by loading all of the trees in the system
     final List<Tree> trees;
     try {
-      trees = Tree.fetchAllTrees(tsdb).joinUninterruptibly();
+      trees = BadTimeout.hour(Tree.fetchAllTrees(tsdb));
       LOG.info("[" + thread_id + "] Complete");
     } catch (Exception e) {
       LOG.error("[" + thread_id + "] Unexpected Exception", e);
@@ -304,7 +305,7 @@ final class TreeSync extends Thread {
     final TsuidScanner tree_scanner = new TsuidScanner();
     tree_scanner.scan().addErrback(new ErrBack());
     try {
-      completed.joinUninterruptibly();
+      BadTimeout.hour(completed);
       LOG.info("[" + thread_id + "] Complete");
     } catch (Exception e) {
       LOG.error("[" + thread_id + "] Scanner Exception", e);
@@ -328,7 +329,7 @@ final class TreeSync extends Thread {
     } else {
       LOG.info("Deleting tree branches for: " + tree_id);
     }
-    Tree.deleteTree(tsdb, tree_id, delete_definition).joinUninterruptibly();
+    BadTimeout.hour(Tree.deleteTree(tsdb, tree_id, delete_definition));
     LOG.info("Completed tree deletion for: " + tree_id);
     return 0;
   }

@@ -258,7 +258,7 @@ public final class Tags {
   static Map<String, String> getTags(final TSDB tsdb,
                                      final byte[] row) throws NoSuchUniqueId {
     try {
-      return getTagsAsync(tsdb, row).joinUninterruptibly();
+      return BadTimeout.minutes(getTagsAsync(tsdb, row));
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
@@ -352,7 +352,7 @@ public final class Tags {
                                       final Map<String, String> tags)
     throws NoSuchUniqueName {
     try {
-      return resolveAllInternal(tsdb, tags, false).joinUninterruptibly();
+      return BadTimeout.hour(resolveAllInternal(tsdb, tags, false));
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {

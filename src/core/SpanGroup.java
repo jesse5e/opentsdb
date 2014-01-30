@@ -19,6 +19,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 
@@ -48,6 +51,8 @@ import net.opentsdb.meta.Annotation;
  * iterator when using the {@link Span.DownsamplingIterator}.
  */
 final class SpanGroup implements DataPoints {
+
+  private static final Logger LOG = LoggerFactory.getLogger(SpanGroup.class);
 
   // TODO: Make it configurable.
   /** Interval to fix underlying timeseries for downsampling. */
@@ -252,11 +257,16 @@ final class SpanGroup implements DataPoints {
         tags = new HashMap<String, String>(first_tags);
         final ArrayList<Deferred<Map<String, String>>> deferreds = 
           new ArrayList<Deferred<Map<String, String>>>(tags.size());
-        
+        final long startedMs = System.currentTimeMillis();
         while (it.hasNext()) {
           deferreds.add(it.next().getTagsAsync());
         }
-        
+        final long finishedMs = System.currentTimeMillis();
+        final long diffMs = finishedMs - startedMs;
+        if (diffMs > 30000) {
+          LOG.info(String.format("FirstTagSetCB loop took %d milliseconds.",
+                                 diffMs));
+        }
         return Deferred.groupInOrder(deferreds).addCallback(new SpanTagsCB());
       }
     }
@@ -266,7 +276,7 @@ final class SpanGroup implements DataPoints {
 
   public String metricName() {
     try {
-      return metricNameAsync().joinUninterruptibly();
+      return BadTimeout.minutes(metricNameAsync());
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
@@ -281,7 +291,7 @@ final class SpanGroup implements DataPoints {
 
   public Map<String, String> getTags() {
     try {
-      return getTagsAsync().joinUninterruptibly();
+      return BadTimeout.minutes(getTagsAsync());
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
@@ -306,7 +316,7 @@ final class SpanGroup implements DataPoints {
 
   public List<String> getAggregatedTags() {
     try {
-      return getAggregatedTagsAsync().joinUninterruptibly();
+      return BadTimeout.minutes(getAggregatedTagsAsync());
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {

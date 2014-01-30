@@ -359,9 +359,9 @@ public final class TSDB {
         TAG_VALUE_QUAL.getBytes(CHARSET) 
       };
     try {
-      final Map<String, Long> used_uids = UniqueId.getUsedUIDs(this, kinds)
-        .joinUninterruptibly();
-      
+      final Map<String, Long> used_uids =
+          BadTimeout.minutes(UniqueId.getUsedUIDs(this, kinds));
+
       collectUidStats(metrics, collector);
       collector.record("uid.ids-used", used_uids.get(METRICS_QUAL), 
           "kind=" + METRICS_QUAL);

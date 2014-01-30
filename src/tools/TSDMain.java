@@ -27,6 +27,7 @@ import org.jboss.netty.bootstrap.ServerBootstrap;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
 
 import net.opentsdb.BuildData;
+import net.opentsdb.core.BadTimeout;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.tsd.PipelineFactory;
 import net.opentsdb.utils.Config;
@@ -144,7 +145,7 @@ final class TSDMain {
       tsdb.initializePlugins(true);
       
       // Make sure we don't even start if we can't find our tables.
-      tsdb.checkNecessaryTablesExist().joinUninterruptibly();
+      BadTimeout.hour(tsdb.checkNecessaryTablesExist());
 
       registerShutdownHook(tsdb);
       final ServerBootstrap server = new ServerBootstrap(factory);
@@ -175,7 +176,7 @@ final class TSDMain {
       factory.releaseExternalResources();
       try {
         if (tsdb != null)
-          tsdb.shutdown().joinUninterruptibly();
+          BadTimeout.hour(tsdb.shutdown());
       } catch (Exception e2) {
         log.error("Failed to shutdown HBase client", e2);
       }

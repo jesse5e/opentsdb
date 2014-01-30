@@ -595,7 +595,7 @@ final class HttpQuery {
                          + "<h1>Internal Server Error</h1>"
                          + "Oops, sorry but your request failed due to a"
                          + " server error.<br/><br/>"
-                         + "Please try again in 30 seconds.<pre>"
+                         + "Please restart the server or try again later.<pre>"
                          + pretty_exc
                          + "</pre></blockquote>"));
     }

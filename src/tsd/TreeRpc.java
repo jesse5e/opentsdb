@@ -26,6 +26,7 @@ import org.jboss.netty.handler.codec.http.HttpResponseStatus;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.stumbleupon.async.DeferredGroupException;
 
+import net.opentsdb.core.BadTimeout;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.meta.TSMeta;
 import net.opentsdb.tree.Branch;
@@ -114,10 +115,10 @@ final class TreeRpc implements HttpRpc {
   
         if (tree.getTreeId() == 0) {
           query.sendReply(query.serializer().formatTreesV1(
-              Tree.fetchAllTrees(tsdb).joinUninterruptibly()));
+              BadTimeout.hour(Tree.fetchAllTrees(tsdb))));
         } else {
-          final Tree single_tree = Tree.fetchTree(tsdb, tree.getTreeId())
-            .joinUninterruptibly();
+          final Tree single_tree = BadTimeout.hour(
+              Tree.fetchTree(tsdb, tree.getTreeId()));
           if (single_tree == null) {
             throw new BadRequestException(HttpResponseStatus.NOT_FOUND, 
               "Unable to locate tree: " + tree.getTreeId());
@@ -132,15 +133,15 @@ final class TreeRpc implements HttpRpc {
         
         // if the tree ID is set, fetch, copy, save
         if (tree.getTreeId() > 0) {
-          if (Tree.fetchTree(tsdb, tree.getTreeId())
-              .joinUninterruptibly() == null) {
+          if (BadTimeout.hour(Tree.fetchTree(tsdb, tree.getTreeId()))
+              == null) {
             throw new BadRequestException(HttpResponseStatus.NOT_FOUND, 
                 "Unable to locate tree: " + tree.getTreeId());
           } else {
-            if (tree.storeTree(tsdb, (method == HttpMethod.PUT))
-                .joinUninterruptibly() != null) {
-              final Tree stored_tree = Tree.fetchTree(tsdb, tree.getTreeId())
-                .joinUninterruptibly();
+            if (BadTimeout.hour(tree.storeTree(
+                tsdb, (method == HttpMethod.PUT))) != null) {
+              final Tree stored_tree = BadTimeout.hour(
+                  Tree.fetchTree(tsdb, tree.getTreeId()));
               query.sendReply(query.serializer().formatTreeV1(stored_tree));
             } else {
               throw new BadRequestException(
@@ -151,10 +152,10 @@ final class TreeRpc implements HttpRpc {
           }
         } else {
           // create a new tree
-          final int tree_id = tree.createNewTree(tsdb).joinUninterruptibly(); 
+          final int tree_id = BadTimeout.hour(tree.createNewTree(tsdb));
           if (tree_id > 0) {
-            final Tree stored_tree = Tree.fetchTree(tsdb, tree_id)
-              .joinUninterruptibly();
+            final Tree stored_tree = BadTimeout.hour(
+                Tree.fetchTree(tsdb, tree_id));
             query.sendReply(query.serializer().formatTreeV1(stored_tree));
           } else {
             throw new BadRequestException(
@@ -186,13 +187,12 @@ final class TreeRpc implements HttpRpc {
           }
         }
         
-        if (Tree.fetchTree(tsdb, tree.getTreeId()).joinUninterruptibly() == 
-          null) {
+        if (BadTimeout.hour(Tree.fetchTree(tsdb, tree.getTreeId())) == null) {
           throw new BadRequestException(HttpResponseStatus.NOT_FOUND, 
               "Unable to locate tree: " + tree.getTreeId());
         }
-        Tree.deleteTree(tsdb, tree.getTreeId(), delete_definition)
-          .joinUninterruptibly(); 
+        BadTimeout.hour(Tree.deleteTree(tsdb, tree.getTreeId(),
+                                          delete_definition)); 
         query.sendStatusOnly(HttpResponseStatus.NO_CONTENT);
         
       } else {
@@ -242,8 +242,8 @@ final class TreeRpc implements HttpRpc {
       }
       
       // fetch it
-      final Branch branch = Branch.fetchBranch(tsdb, branch_id, true)
-        .joinUninterruptibly();
+      final Branch branch = BadTimeout.hour(Branch.fetchBranch(
+          tsdb, branch_id, true));
       if (branch == null) {
         throw new BadRequestException(HttpResponseStatus.NOT_FOUND, 
             "Unable to locate branch '" + Branch.idToString(branch_id) + 
@@ -277,8 +277,7 @@ final class TreeRpc implements HttpRpc {
       
       // no matter what, we'll need a tree to work with, so make sure it exists
       Tree tree = null;
-        tree = Tree.fetchTree(tsdb, rule.getTreeId())
-          .joinUninterruptibly();
+        tree = BadTimeout.hour(Tree.fetchTree(tsdb, rule.getTreeId()));
   
       if (tree == null) {
         throw new BadRequestException(HttpResponseStatus.NOT_FOUND, 
@@ -298,11 +297,11 @@ final class TreeRpc implements HttpRpc {
         
       } else if (method == HttpMethod.POST || method == HttpMethod.PUT) {
   
-        if (rule.syncToStorage(tsdb, (method == HttpMethod.PUT))
-            .joinUninterruptibly()) {
-          final TreeRule stored_rule = TreeRule.fetchRule(tsdb, 
-              rule.getTreeId(), rule.getLevel(), rule.getOrder())
-              .joinUninterruptibly();
+        if (BadTimeout.hour(rule.syncToStorage(tsdb,
+            (method == HttpMethod.PUT)))) {
+          final TreeRule stored_rule = BadTimeout.hour(
+              TreeRule.fetchRule(tsdb, rule.getTreeId(), rule.getLevel(),
+                                 rule.getOrder()));
           query.sendReply(query.serializer().formatTreeRuleV1(stored_rule));
         } else {
           throw new RuntimeException("Unable to save rule " + rule + 
@@ -315,8 +314,8 @@ final class TreeRpc implements HttpRpc {
           throw new BadRequestException(HttpResponseStatus.NOT_FOUND, 
               "Unable to locate rule: " + rule);
         }
-        TreeRule.deleteRule(tsdb, tree.getTreeId(), rule.getLevel(), 
-            rule.getOrder()).joinUninterruptibly(); 
+        BadTimeout.hour(TreeRule.deleteRule(tsdb, tree.getTreeId(),
+            rule.getLevel(), rule.getOrder()));
         query.sendStatusOnly(HttpResponseStatus.NO_CONTENT);
   
       } else {
@@ -364,7 +363,7 @@ final class TreeRpc implements HttpRpc {
     
     // make sure the tree exists
     try {
-      if (Tree.fetchTree(tsdb, tree_id).joinUninterruptibly() == null) {
+      if (BadTimeout.hour(Tree.fetchTree(tsdb, tree_id)) == null) {
         throw new BadRequestException(HttpResponseStatus.NOT_FOUND, 
             "Unable to locate tree: " + tree_id);
       }
@@ -378,17 +377,16 @@ final class TreeRpc implements HttpRpc {
         
         // purge the existing tree rules if we're told to PUT
         if (method == HttpMethod.PUT) {
-          TreeRule.deleteAllRules(tsdb, tree_id).joinUninterruptibly();
+          BadTimeout.hour(TreeRule.deleteAllRules(tsdb, tree_id));
         }
         for (TreeRule rule : rules) {
-          rule.syncToStorage(tsdb, method == HttpMethod.PUT)
-            .joinUninterruptibly();
+          BadTimeout.hour(rule.syncToStorage(tsdb, method == HttpMethod.PUT));
         }
         query.sendStatusOnly(HttpResponseStatus.NO_CONTENT);
   
       } else if (method == HttpMethod.DELETE) {
   
-        TreeRule.deleteAllRules(tsdb, tree_id).joinUninterruptibly();
+        BadTimeout.hour(TreeRule.deleteAllRules(tsdb, tree_id));
         query.sendStatusOnly(HttpResponseStatus.NO_CONTENT);
   
       } else {
@@ -428,7 +426,7 @@ final class TreeRpc implements HttpRpc {
     Tree tree = null;
     try {
       
-      tree = Tree.fetchTree(tsdb, tree_id).joinUninterruptibly();
+      tree = BadTimeout.hour(Tree.fetchTree(tsdb, tree_id));
       if (tree == null) {
         throw new BadRequestException(HttpResponseStatus.NOT_FOUND, 
             "Unable to locate tree: " + tree_id);
@@ -453,8 +451,7 @@ final class TreeRpc implements HttpRpc {
             new HashMap<String, Object>();
           
           try {
-            final TSMeta meta = TSMeta.getTSMeta(tsdb, tsuid)
-              .joinUninterruptibly();
+            final TSMeta meta = BadTimeout.hour(TSMeta.getTSMeta(tsdb, tsuid));
             // if the meta doesn't exist, we can't process, so just log a 
             // message to the results and move on to the next TSUID
             if (meta == null) {
@@ -467,7 +464,7 @@ final class TreeRpc implements HttpRpc {
               continue;
             }
             
-            builder.processTimeseriesMeta(meta, true).joinUninterruptibly();
+            BadTimeout.hour(builder.processTimeseriesMeta(meta, true));
             tsuid_results.put("branch", builder.getRootBranch());
             tsuid_results.put("meta", meta);
             tsuid_results.put("messages", builder.getTestMessage());
@@ -530,7 +527,7 @@ final class TreeRpc implements HttpRpc {
     // make sure the tree exists
     try {
       
-      if (Tree.fetchTree(tsdb, tree_id).joinUninterruptibly() == null) {
+      if (BadTimeout.hour(Tree.fetchTree(tsdb, tree_id)) == null) {
         throw new BadRequestException(HttpResponseStatus.NOT_FOUND, 
             "Unable to locate tree: " + tree_id);
       }
@@ -543,8 +540,8 @@ final class TreeRpc implements HttpRpc {
         @SuppressWarnings("unchecked")
         final List<String> tsuids = (List<String>)map.get("tsuids");
         final Map<String, String> results = for_collisions ? 
-            Tree.fetchCollisions(tsdb, tree_id, tsuids).joinUninterruptibly() :
-              Tree.fetchNotMatched(tsdb, tree_id, tsuids).joinUninterruptibly();
+            BadTimeout.hour(Tree.fetchCollisions(tsdb, tree_id, tsuids)) :
+              BadTimeout.hour(Tree.fetchNotMatched(tsdb, tree_id, tsuids));
         query.sendReply(query.serializer().formatTreeCollisionNotMatchedV1(
             results, for_collisions));
   

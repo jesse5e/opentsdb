@@ -31,7 +31,7 @@ final class RowKey {
    */
   static String metricName(final TSDB tsdb, final byte[] row) {
     try {
-      return metricNameAsync(tsdb, row).joinUninterruptibly();
+      return BadTimeout.minutes(metricNameAsync(tsdb, row));
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {

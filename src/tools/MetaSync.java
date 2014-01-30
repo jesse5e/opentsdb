@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import net.opentsdb.core.BadTimeout;
 import net.opentsdb.core.Const;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.meta.TSMeta;
@@ -514,7 +515,7 @@ final class MetaSync extends Thread {
     final MetaScanner scanner = new MetaScanner();
     try {
       scanner.scan();
-      result.joinUninterruptibly();
+      BadTimeout.hour(result);
       LOG.info("[" + thread_id + "] Complete");
     } catch (Exception e) {
       LOG.error("[" + thread_id + "] Scanner Exception", e);

@@ -20,6 +20,7 @@ import org.jboss.netty.handler.codec.http.HttpResponseStatus;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 
+import net.opentsdb.core.BadTimeout;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.meta.Annotation;
 import net.opentsdb.utils.DateTime;
@@ -51,9 +52,8 @@ final class AnnotationRpc implements HttpRpc {
     // GET
     if (method == HttpMethod.GET) {
       try {
-        final Annotation stored_annotation = 
-          Annotation.getAnnotation(tsdb, note.getTSUID(), note.getStartTime())
-            .joinUninterruptibly();
+        final Annotation stored_annotation = BadTimeout.minutes(
+            Annotation.getAnnotation(tsdb, note.getTSUID(), note.getStartTime()));
         if (stored_annotation == null) {
           throw new BadRequestException(HttpResponseStatus.NOT_FOUND, 
               "Unable to locate annotation in storage");
@@ -91,7 +91,7 @@ final class AnnotationRpc implements HttpRpc {
       try {
         final Deferred<Annotation> process_meta = note.syncToStorage(tsdb, 
             method == HttpMethod.PUT).addCallbackDeferring(new SyncCB());
-        final Annotation updated_meta = process_meta.joinUninterruptibly();
+        final Annotation updated_meta = BadTimeout.hour(process_meta);
         tsdb.indexAnnotation(note);
         query.sendReply(query.serializer().formatAnnotationV1(updated_meta));
       } catch (IllegalStateException e) {
@@ -105,7 +105,7 @@ final class AnnotationRpc implements HttpRpc {
     } else if (method == HttpMethod.DELETE) {
 
       try {
-        note.delete(tsdb).joinUninterruptibly();
+        BadTimeout.hour(note.delete(tsdb));
         tsdb.deleteAnnotation(note);
       } catch (IllegalArgumentException e) {
         throw new BadRequestException(

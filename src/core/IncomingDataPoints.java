@@ -158,7 +158,7 @@ final class IncomingDataPoints implements WritableDataPoints {
   public void setSeries(final String metric, final Map<String, String> tags) {
     checkMetricAndTags(metric, tags);
     try {
-      row = rowKeyTemplate(tsdb, metric, tags).joinUninterruptibly();
+      row = BadTimeout.hour(rowKeyTemplate(tsdb, metric, tags));
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
@@ -342,7 +342,7 @@ final class IncomingDataPoints implements WritableDataPoints {
 
   public String metricName() {
     try {
-      return metricNameAsync().joinUninterruptibly();
+      return BadTimeout.minutes(metricNameAsync());
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
@@ -360,7 +360,7 @@ final class IncomingDataPoints implements WritableDataPoints {
 
   public Map<String, String> getTags() {
     try {
-      return getTagsAsync().joinUninterruptibly();
+      return BadTimeout.minutes(getTagsAsync());
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {

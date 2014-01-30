@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 
+import net.opentsdb.core.BadTimeout;
 import net.opentsdb.core.DataPoints;
 import net.opentsdb.core.Query;
 import net.opentsdb.core.RateOptions;
@@ -120,17 +121,16 @@ final class QueryRpc implements HttpRpc {
     List<Annotation> globals = null;
     if (!data_query.getNoAnnotations() && data_query.getGlobalAnnotations()) {
       try {
-        globals = Annotation.getGlobalAnnotations(tsdb, 
-            data_query.startTime() / 1000, data_query.endTime() / 1000)
-            .joinUninterruptibly();
+        globals = BadTimeout.minutes(Annotation.getGlobalAnnotations(tsdb,
+            data_query.startTime() / 1000, data_query.endTime() / 1000));
       } catch (Exception e) {
         throw new RuntimeException("Shouldn't be here", e);
       }
     }
     
     try {
-      Deferred.groupInOrder(deferreds).addCallback(new QueriesCB())
-        .joinUninterruptibly();
+      BadTimeout.hour(Deferred.groupInOrder(deferreds).
+          addCallback(new QueriesCB()));
     } catch (Exception e) {
       throw new RuntimeException("Shouldn't be here", e);
     }

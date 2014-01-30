@@ -46,6 +46,9 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(RpcHandler.class);
 
+  // Gives up queries if there were internal errors more than allowed.
+  private static final int MAX_INTERNAL_ERRORS_ALLOWED = 2;
+
   private static final AtomicLong telnet_rpcs_received = new AtomicLong();
   private static final AtomicLong http_rpcs_received = new AtomicLong();
   private static final AtomicLong exceptions_caught = new AtomicLong();
@@ -54,8 +57,13 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
   private final HashMap<String, TelnetRpc> telnet_commands;
   /** RPC executed when there's an unknown telnet-style command. */
   private final TelnetRpc unknown_cmd = new Unknown();
-  /** Commands we serve on the HTTP interface. */
-  private final HashMap<String, HttpRpc> http_commands;
+  /** Light commands we serve on the HTTP interface. */
+  private final HashMap<String, HttpRpc> http_light_commands;
+  /**
+   * Expensive commands we serve on the HTTP interface.
+   * They will be dropped when a serve in a bad shape.
+   */
+  private final HashMap<String, HttpRpc> http_expensive_commands;
   /** List of domains to allow access to HTTP. By default this will be empty and
    * all CORS headers will be ignored. */
   private final HashSet<String> cors_domains;
@@ -92,34 +100,35 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
     }
     
     telnet_commands = new HashMap<String, TelnetRpc>(7);
-    http_commands = new HashMap<String, HttpRpc>(11);
+    http_light_commands = new HashMap<String, HttpRpc>(11);
+    http_expensive_commands = new HashMap<String, HttpRpc>(11);
     {
       final DieDieDie diediedie = new DieDieDie();
       telnet_commands.put("diediedie", diediedie);
-      http_commands.put("diediedie", diediedie);
+      http_light_commands.put("diediedie", diediedie);
     }
     {
       final StaticFileRpc staticfile = new StaticFileRpc();
-      http_commands.put("favicon.ico", staticfile);
-      http_commands.put("s", staticfile);
+      http_light_commands.put("favicon.ico", staticfile);
+      http_light_commands.put("s", staticfile);
     }
     {
       final StatsRpc stats = new StatsRpc();
       telnet_commands.put("stats", stats);
-      http_commands.put("stats", stats);
-      http_commands.put("api/stats", stats);
+      http_light_commands.put("stats", stats);
+      http_light_commands.put("api/stats", stats);
     }
     {
       final Version version = new Version();
       telnet_commands.put("version", version);
-      http_commands.put("version", version);
-      http_commands.put("api/version", version);
+      http_light_commands.put("version", version);
+      http_light_commands.put("api/version", version);
     }
     {
       final DropCaches dropcaches = new DropCaches();
       telnet_commands.put("dropcaches", dropcaches);
-      http_commands.put("dropcaches", dropcaches);
-      http_commands.put("api/dropcaches", dropcaches);
+      http_light_commands.put("dropcaches", dropcaches);
+      http_light_commands.put("api/dropcaches", dropcaches);
     }
 
     telnet_commands.put("exit", new Exit());
@@ -127,29 +136,29 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
     {
       final PutDataPointRpc put = new PutDataPointRpc();
       telnet_commands.put("put", put);
-      http_commands.put("api/put", put);
+      http_expensive_commands.put("api/put", put);
     }
 
-    http_commands.put("", new HomePage());
+    http_light_commands.put("", new HomePage());
     {
       final ListAggregators aggregators = new ListAggregators();
-      http_commands.put("aggregators", aggregators);
-      http_commands.put("api/aggregators", aggregators);
+      http_light_commands.put("aggregators", aggregators);
+      http_light_commands.put("api/aggregators", aggregators);
     }
-    http_commands.put("logs", new LogsRpc());
-    http_commands.put("q", new GraphHandler());
+    http_light_commands.put("logs", new LogsRpc());
+    http_expensive_commands.put("q", new GraphHandler());
     {
       final SuggestRpc suggest_rpc = new SuggestRpc();
-      http_commands.put("suggest", suggest_rpc);
-      http_commands.put("api/suggest", suggest_rpc);
+      http_expensive_commands.put("suggest", suggest_rpc);
+      http_expensive_commands.put("api/suggest", suggest_rpc);
     }
-    http_commands.put("api/serializers", new Serializers());
-    http_commands.put("api/uid", new UniqueIdRpc());
-    http_commands.put("api/query", new QueryRpc());
-    http_commands.put("api/tree", new TreeRpc());
-    http_commands.put("api/annotation", new AnnotationRpc());
-    http_commands.put("api/search", new SearchRpc());
-    http_commands.put("api/config", new ShowConfig());
+    http_expensive_commands.put("api/serializers", new Serializers());
+    http_expensive_commands.put("api/uid", new UniqueIdRpc());
+    http_expensive_commands.put("api/query", new QueryRpc());
+    http_expensive_commands.put("api/tree", new TreeRpc());
+    http_expensive_commands.put("api/annotation", new AnnotationRpc());
+    http_expensive_commands.put("api/search", new SearchRpc());
+    http_light_commands.put("api/config", new ShowConfig());
   }
 
   @Override
@@ -208,10 +217,17 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
       return;
     }
     try {
-      try {        
+      try {
         final String route = query.getQueryBaseRoute();
         query.setSerializer();
-        
+        if (http_expensive_commands.containsKey(route) &&
+            exceptions_caught.get() > MAX_INTERNAL_ERRORS_ALLOWED) {
+          // Gives up the query because of too many prior internal errors.
+          query.internalError(new Exception("TOO MANY INTERNAL ERRORS. " +
+                                            "Restart OpenTSDB server."));
+          return;
+        }
+
         final String domain = req.getHeader("Origin");
         
         // catch CORS requests and add the header or refuse them if the domain
@@ -249,8 +265,11 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
                 "] is not permitted access");
           }
         }
-        
-        final HttpRpc rpc = http_commands.get(route);
+
+        HttpRpc rpc = http_light_commands.get(route);
+        if (rpc == null) {
+          rpc = http_expensive_commands.get(route);
+        }
         if (rpc != null) {
           rpc.execute(tsdb, query);
         } else {
@@ -262,6 +281,8 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
     } catch (Exception ex) {
       query.internalError(ex);
       exceptions_caught.incrementAndGet();
+      LOG.info(String.format("%d exceptions have bee caugt",
+                             exceptions_caught.get()));
     }
   }
 
@@ -299,7 +320,7 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
     }
 
     private Deferred<Object> doShutdown(final TSDB tsdb, final Channel chan) {
-      ((GraphHandler) http_commands.get("q")).shutdown();
+      ((GraphHandler) http_expensive_commands.get("q")).shutdown();
       ConnectionManager.closeAllConnections();
       // Netty gets stuck in an infinite loop if we shut it down from within a
       // NIO thread.  So do this from a newly created thread.

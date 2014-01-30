@@ -72,7 +72,7 @@ final class Span implements DataPoints {
    */
   public String metricName() {
     try {
-      return metricNameAsync().joinUninterruptibly();
+      return BadTimeout.minutes(metricNameAsync());
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
@@ -92,7 +92,7 @@ final class Span implements DataPoints {
    */
   public Map<String, String> getTags() {
     try {
-      return getTagsAsync().joinUninterruptibly();
+      return BadTimeout.minutes(getTagsAsync());
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {

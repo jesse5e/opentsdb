@@ -25,6 +25,7 @@ import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import javax.xml.bind.DatatypeConverter;
 
+import net.opentsdb.core.BadTimeout;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.meta.UIDMeta;
 
@@ -189,7 +190,7 @@ public final class UniqueId implements UniqueIdInterface {
    */
   public String getName(final byte[] id) throws NoSuchUniqueId, HBaseException {
     try {
-      return getNameAsync(id).joinUninterruptibly();
+      return BadTimeout.minutes(getNameAsync(id));
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
@@ -261,7 +262,7 @@ public final class UniqueId implements UniqueIdInterface {
 
   public byte[] getId(final String name) throws NoSuchUniqueName, HBaseException {
     try {
-      return getIdAsync(name).joinUninterruptibly();
+      return BadTimeout.minutes(getIdAsync(name));
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
@@ -552,7 +553,7 @@ public final class UniqueId implements UniqueIdInterface {
    */
   public byte[] getOrCreateId(final String name) throws HBaseException {
     try {
-      return getOrCreateIdAsync(name).joinUninterruptibly();
+      return BadTimeout.minutes(getOrCreateIdAsync(name));
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
@@ -650,7 +651,7 @@ public final class UniqueId implements UniqueIdInterface {
       throw new IllegalArgumentException("Count must be greater than 0");
     }
     try {
-      return suggestAsync(search, max_results).joinUninterruptibly();
+      return BadTimeout.hour(suggestAsync(search, max_results));
     } catch (HBaseException e) {
       throw e;
     } catch (Exception e) {  // Should never happen.
@@ -802,7 +803,7 @@ public final class UniqueId implements UniqueIdInterface {
     try {
       final DeleteRequest old_forward_mapping = new DeleteRequest(
         table, toBytes(oldname), ID_FAMILY, kind);
-      client.delete(old_forward_mapping).joinUninterruptibly();
+      BadTimeout.hour(client.delete(old_forward_mapping));
     } catch (HBaseException e) {
       LOG.error("When trying rename(\"" + oldname
         + "\", \"" + newname + "\") on " + this + ": Failed to remove the"
@@ -882,7 +883,7 @@ public final class UniqueId implements UniqueIdInterface {
     put.setBufferable(false);  // TODO(tsuna): Remove once this code is async.
     while (attempts-- > 0) {
       try {
-        client.put(put).joinUninterruptibly();
+        BadTimeout.minutes(client.put(put));
         return;
       } catch (HBaseException e) {
         if (attempts > 0) {

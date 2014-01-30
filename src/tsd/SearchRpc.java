@@ -14,6 +14,7 @@ package net.opentsdb.tsd;
 
 import org.jboss.netty.handler.codec.http.HttpMethod;
 
+import net.opentsdb.core.BadTimeout;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.search.SearchQuery;
 import net.opentsdb.search.SearchQuery.SearchType;
@@ -63,8 +64,8 @@ final class SearchRpc implements HttpRpc {
     search_query.setType(type);
     
     try {
-      final SearchQuery results = 
-        tsdb.executeSearch(search_query).joinUninterruptibly();
+      final SearchQuery results =
+          BadTimeout.hour(tsdb.executeSearch(search_query));
       query.sendReply(query.serializer().formatSearchResultsV1(results));
     } catch (IllegalStateException e) {
       throw new BadRequestException("Searching is not enabled", e);

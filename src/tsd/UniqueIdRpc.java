@@ -25,6 +25,7 @@ import org.jboss.netty.handler.codec.http.HttpResponseStatus;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 
+import net.opentsdb.core.BadTimeout;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.meta.TSMeta;
 import net.opentsdb.meta.UIDMeta;
@@ -157,8 +158,8 @@ final class UniqueIdRpc implements HttpRpc {
       final UniqueIdType type = UniqueId.stringToUniqueIdType(
           query.getRequiredQueryStringParam("type"));
       try {
-        final UIDMeta meta = UIDMeta.getUIDMeta(tsdb, type, uid)
-        .joinUninterruptibly();
+        final UIDMeta meta = BadTimeout.minutes(
+            UIDMeta.getUIDMeta(tsdb, type, uid));
         query.sendReply(query.serializer().formatUidMetaV1(meta));
       } catch (NoSuchUniqueId e) {
         throw new BadRequestException(HttpResponseStatus.NOT_FOUND, 
@@ -199,7 +200,7 @@ final class UniqueIdRpc implements HttpRpc {
       try {
         final Deferred<UIDMeta> process_meta = meta.syncToStorage(tsdb, 
             method == HttpMethod.PUT).addCallbackDeferring(new SyncCB());
-        final UIDMeta updated_meta = process_meta.joinUninterruptibly();
+        final UIDMeta updated_meta = BadTimeout.hour(process_meta);
         tsdb.indexUIDMeta(updated_meta);
         query.sendReply(query.serializer().formatUidMetaV1(updated_meta));
       } catch (IllegalStateException e) {
@@ -222,7 +223,7 @@ final class UniqueIdRpc implements HttpRpc {
         meta = this.parseUIDMetaQS(query);
       }
       try {        
-        meta.delete(tsdb).joinUninterruptibly();
+        BadTimeout.hour(meta.delete(tsdb));
         tsdb.deleteUIDMeta(meta);
       } catch (IllegalArgumentException e) {
         throw new BadRequestException("Unable to delete UIDMeta information", e);
@@ -254,7 +255,7 @@ final class UniqueIdRpc implements HttpRpc {
       
       final String tsuid = query.getRequiredQueryStringParam("tsuid");
       try {
-        final TSMeta meta = TSMeta.getTSMeta(tsdb, tsuid).joinUninterruptibly();
+        final TSMeta meta = BadTimeout.minutes(TSMeta.getTSMeta(tsdb, tsuid));
         if (meta != null) {
           query.sendReply(query.serializer().formatTSMetaV1(meta));
         } else {
@@ -304,7 +305,7 @@ final class UniqueIdRpc implements HttpRpc {
       try {
         final Deferred<TSMeta> process_meta = meta.syncToStorage(tsdb, 
             method == HttpMethod.PUT).addCallbackDeferring(new SyncCB());
-        final TSMeta updated_meta = process_meta.joinUninterruptibly();
+        final TSMeta updated_meta = BadTimeout.hour(process_meta);
         tsdb.indexTSMeta(updated_meta);
         query.sendReply(query.serializer().formatTSMetaV1(updated_meta));
       } catch (IllegalStateException e) {
