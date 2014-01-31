@@ -66,6 +66,16 @@ public class BadTimeout {
   }
 
   /**
+   * The system is considered as unstable if there have been any bad timeouts
+   * because they must not happen for a healthy server.
+   *
+   * @return true if system is unstable.
+   */
+  public static boolean isSystemUnstable() {
+    return systemUnstable.get();
+  }
+
+  /**
    * Waits for the given deferred results for the specified minutes.
    * Then flags the system unstable if there is a timeout. Timeout could
    * happen before the specified timeout if the system is unstable.
@@ -85,7 +95,7 @@ public class BadTimeout {
         } catch (TimeoutException unused) {
           // Checks if the systems is stable every minute, and gives up if
           // it is unstable even before the given timeout.
-          if (systemUnstable.get()) {
+          if (isSystemUnstable()) {
             throw new BadTimeoutException(deferred, count * ONE_MINUTE_MILLIS);
           }
         }

@@ -35,6 +35,7 @@ import org.jboss.netty.handler.codec.http.HttpResponseStatus;
 
 import net.opentsdb.BuildData;
 import net.opentsdb.core.Aggregators;
+import net.opentsdb.core.BadTimeout;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.stats.StatsCollector;
 import net.opentsdb.utils.JSON;
@@ -45,9 +46,6 @@ import net.opentsdb.utils.JSON;
 final class RpcHandler extends SimpleChannelUpstreamHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(RpcHandler.class);
-
-  // Gives up queries if there were internal errors more than allowed.
-  private static final int MAX_INTERNAL_ERRORS_ALLOWED = 2;
 
   private static final AtomicLong telnet_rpcs_received = new AtomicLong();
   private static final AtomicLong http_rpcs_received = new AtomicLong();
@@ -221,9 +219,9 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
         final String route = query.getQueryBaseRoute();
         query.setSerializer();
         if (http_expensive_commands.containsKey(route) &&
-            exceptions_caught.get() > MAX_INTERNAL_ERRORS_ALLOWED) {
-          // Gives up the query because of too many prior internal errors.
-          query.internalError(new Exception("TOO MANY INTERNAL ERRORS. " +
+            BadTimeout.isSystemUnstable()) {
+          // Gives up the query if the system is unstable with bad timeouts.
+          query.internalError(new Exception("SYSTEM UNSTABLE. " +
                                             "Restart OpenTSDB server."));
           return;
         }
