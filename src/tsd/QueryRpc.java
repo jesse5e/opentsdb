@@ -79,7 +79,7 @@ final class QueryRpc implements HttpRpc {
             query.apiVersion() + " is not implemented");
       }
     } else {
-      data_query = this.parseQuery(tsdb, query);
+      data_query = QueryRpc.parseQuery(query);
     }
     
     // validate and then compile the queries
@@ -150,17 +150,17 @@ final class QueryRpc implements HttpRpc {
 
   /**
    * Parses a query string legacy style query from the URI
-   * @param tsdb The TSDB we belong to
    * @param query The HTTP Query for parsing
    * @return A TSQuery if parsing was successful
    * @throws BadRequestException if parsing was unsuccessful
    */
-  private TSQuery parseQuery(final TSDB tsdb, final HttpQuery query) {
+  static TSQuery parseQuery(final HttpQuery query) {
     final TSQuery data_query = new TSQuery();
-    
+
     data_query.setStart(query.getRequiredQueryStringParam("start"));
     data_query.setEnd(query.getQueryStringParam("end"));
-    
+    data_query.setTimezone(query.getQueryStringParam("tz"));
+
     if (query.hasQueryStringParam("padding")) {
       data_query.setPadding(true);
     }
@@ -185,14 +185,14 @@ final class QueryRpc implements HttpRpc {
     if (query.hasQueryStringParam("tsuid")) {
       final List<String> tsuids = query.getQueryStringParams("tsuid");     
       for (String q : tsuids) {
-        this.parseTsuidTypeSubQuery(q, data_query);
+        QueryRpc.parseTsuidTypeSubQuery(q, data_query);
       }
     }
     
     if (query.hasQueryStringParam("m")) {
       final List<String> legacy_queries = query.getQueryStringParams("m");      
       for (String q : legacy_queries) {
-        this.parseMTypeSubQuery(q, data_query);
+        QueryRpc.parseMTypeSubQuery(q, data_query);
       }
     }
     
@@ -208,8 +208,9 @@ final class QueryRpc implements HttpRpc {
    * @return A TSSubQuery instance
    * @throws BadRequestException if there is no tokens or any unknown token.
    */
-  static private TSSubQuery parseAggregatorParam(final String[] tokens) {
-    // Syntax = agg:[iw-interval:][interval-agg:][rate:][ext-nnn.mmm:]
+  private static TSSubQuery parseAggregatorParam(final String[] tokens) {
+    // Syntax = agg:[iw-interval:][interval-agg:]
+    //          [rate[{counter[,[countermax][,resetvalue]]}]:][ext-nnn.mmm:]
     // where the parts in square brackets `[' .. `]' are optional.
     // agg is the name of an aggregation function. See {@link Aggregators}.
     // iw-interval is a time window of interpolation. See {@link TSSubQuery}.
@@ -258,7 +259,7 @@ final class QueryRpc implements HttpRpc {
    * @throws BadRequestException if we are unable to parse the query or it is
    * missing components
    */
-  private void parseMTypeSubQuery(final String query_string, 
+  private static void parseMTypeSubQuery(final String query_string,
       TSQuery data_query) {
     if (query_string == null || query_string.isEmpty()) {
       throw new BadRequestException("The query string was empty");
@@ -291,7 +292,7 @@ final class QueryRpc implements HttpRpc {
    * @throws BadRequestException if we are unable to parse the query or it is
    * missing components
    */
-  private void parseTsuidTypeSubQuery(final String query_string, 
+  private static void parseTsuidTypeSubQuery(final String query_string,
       TSQuery data_query) {
     if (query_string == null || query_string.isEmpty()) {
       throw new BadRequestException("The tsuid query string was empty");
@@ -327,7 +328,7 @@ final class QueryRpc implements HttpRpc {
    * @throws BadRequestException if the parameter is malformed
    * @since 2.0
    */
-   static final public RateOptions parseRateOptions(final boolean rate,
+  private static final RateOptions parseRateOptions(final boolean rate,
        final String spec) {
      if (!rate || spec.length() == 4) {
        return new RateOptions(false, Long.MAX_VALUE,

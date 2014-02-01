@@ -102,9 +102,9 @@ public class BadTimeout {
       }
       // Timeout could happen only if the system is unstable.
       systemUnstable.set(true);
+      logStackTraces();
       throw new BadTimeoutException(deferred, timeoutMins * ONE_MINUTE_MILLIS);
     } catch (Exception e) {
-      logStackTraces();
       throw e;
     }
   }

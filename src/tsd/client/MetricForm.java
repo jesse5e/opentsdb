@@ -58,6 +58,7 @@ final class MetricForm extends HorizontalPanel implements Focusable {
   private final ListBox aggregators = new ListBox();
   private final ValidatedTextBox metric = new ValidatedTextBox();
   private final FlexTable tagtable = new FlexTable();
+  private final ValidatedTextBox interpolationWindow = new ValidatedTextBox();
 
   public MetricForm(final EventsHandler handler) {
     events_handler = handler;
@@ -87,8 +88,10 @@ final class MetricForm extends HorizontalPanel implements Focusable {
       metric.addBlurHandler(metric_handler);
       metric.addKeyPressHandler(metric_handler);
     }
-
     metric.setValidationRegexp(TSDB_ID_RE);
+    setupInterpolationWindowWidgets();
+    interpolationWindow.addBlurHandler(handler);
+    interpolationWindow.addKeyPressHandler(handler);
     assembleUi();
   }
 
@@ -149,11 +152,12 @@ final class MetricForm extends HorizontalPanel implements Focusable {
   public void updateFromQueryString(final String m, final String o) {
     // TODO: Try to reduce code duplication with GraphHandler.parseQuery().
     // m is of the following forms:
-    //  agg:[interval-agg:][rate[{counter[,max[,reset]]}:]metric[{tag=value,...}]
+    //  agg:[iw-interval]:[interval-agg:][rate[{counter[,max[,reset]]}:]
+    //      metric[{tag=value,...}]
     // Where the parts in square brackets `[' .. `]' are optional.
     final String[] parts = m.split(":");
     int i = parts.length;
-    if (i < 2 || i > 4) {
+    if (i < 2 || i > 5) {
       return;  // Malformed.
     }
 
@@ -178,8 +182,8 @@ final class MetricForm extends HorizontalPanel implements Focusable {
     }
 
     // downsampling function & interval.
-    if (i > 0) {
-      final int dash = parts[1].indexOf('-', 1);  // 1st char can't be `-'.
+    if (i > 0 && Character.isDigit(parts[i].charAt(0))) {
+      final int dash = parts[i].indexOf('-', 1);  // 1st char can't be `-'.
       if (dash < 0) {
         disableDownsample();
         return;  // Invalid downsampling specifier.
@@ -187,12 +191,22 @@ final class MetricForm extends HorizontalPanel implements Focusable {
       downsample.setValue(true, false);
 
       downsampler.setEnabled(true);
-      setSelectedItem(downsampler, parts[1].substring(dash + 1));
+      setSelectedItem(downsampler, parts[i].substring(dash + 1));
 
       interval.setEnabled(true);
-      interval.setText(parts[1].substring(0, dash));
+      interval.setText(parts[i].substring(0, dash));
+      --i;
     } else {
       disableDownsample();
+    }
+
+    // Interpolation window
+    if (i > 0 && parts[i].startsWith("iw-")) {
+      interpolationWindow.setEnabled(true);
+      interpolationWindow.setText(parts[i].substring(3));
+    } else {
+      interpolationWindow.setText("1m");
+      interpolationWindow.setEnabled(false);
     }
 
     x1y2.setValue(o.contains("axis x1y2"), false);
@@ -266,6 +280,14 @@ final class MetricForm extends HorizontalPanel implements Focusable {
         hbox.add(interval);
         vbox.add(hbox);
       }
+      {
+        final HorizontalPanel hbox = new HorizontalPanel();
+        final InlineLabel l = new InlineLabel();
+        l.setText("Interpolation window:");
+        hbox.add(l);
+        hbox.add(interpolationWindow);
+        vbox.add(hbox);
+      }
       add(vbox);
     }
   }
@@ -290,6 +312,7 @@ final class MetricForm extends HorizontalPanel implements Focusable {
     }
     url.append("&m=");
     url.append(selectedValue(aggregators));
+    url.append(":iw-").append(interpolationWindow.getValue());
     if (downsample.getValue()) {
       url.append(':').append(interval.getValue())
         .append('-').append(selectedValue(downsampler));
@@ -509,6 +532,14 @@ final class MetricForm extends HorizontalPanel implements Focusable {
         }
       }
     });
+  }
+
+  private void setupInterpolationWindowWidgets() {
+    interpolationWindow.setEnabled(true);
+    interpolationWindow.setMaxLength(5);
+    interpolationWindow.setVisibleLength(5);
+    interpolationWindow.setValue("1m");
+    interpolationWindow.setValidationRegexp("^[1-9][0-9]*[smhdwy]$");
   }
 
   private static String selectedValue(final ListBox list) {  // They should add
