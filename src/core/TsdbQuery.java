@@ -629,8 +629,8 @@ final class TsdbQuery implements Query {
       }
     }
     startTimeSecs -= extensionSecs;
-    LOG.info(String.format("Scan: start = %d, startTimeSecs = %d",
-                           start, startTimeSecs));
+    LOG.debug(String.format("Scan: start = %d, startTimeSecs = %d",
+                            start, startTimeSecs));
     return startTimeSecs > 0 ? startTimeSecs : 0;
   }
 
@@ -644,7 +644,7 @@ final class TsdbQuery implements Query {
     // enough to fetch the starting row but not too small to fetch one
     // additional row before it.
     startTimeSecs -= (Const.MAX_TIMESPAN_SECS - 1);
-    LOG.info(String.format("HBaseScan: startTimeSecs = %d", startTimeSecs));
+    LOG.debug(String.format("HBaseScan: startTimeSecs = %d", startTimeSecs));
     return startTimeSecs > 0 ? startTimeSecs : 0;
   }
 
@@ -677,7 +677,7 @@ final class TsdbQuery implements Query {
     // Jan. 2014: The original implementation added 1 to the end time to
     // include the data point at endSeconds, but now we made it exclusive and
     // not including it.
-    LOG.info(String.format("Scan: end = %d, endSeconds = %d", end, endSeconds));
+    LOG.debug(String.format("Scan: end = %d, endSeconds = %d", end, endSeconds));
     return endSeconds;
   }
 

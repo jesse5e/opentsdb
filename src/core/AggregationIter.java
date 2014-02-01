@@ -295,7 +295,7 @@ final class AggregationIter implements SeekableView, DataPoint,
                          final Interpolation method,
                          final long interpolationWindowMillis,
                          final boolean rate) {
-    LOG.info(String.format("Aggregating %d iterators", iterators.length));
+    LOG.debug(String.format("Aggregating %d iterators", iterators.length));
     this.iterators = iterators;
     this.start_time = start_time;
     this.end_time = end_time;
@@ -335,8 +335,8 @@ final class AggregationIter implements SeekableView, DataPoint,
       }
     }
     if (numEmptyIterators > 0) {
-      LOG.info(String.format("%d out of %d iterators are empty!",
-                             numEmptyIterators, iterators.length));
+      LOG.debug(String.format("%d out of %d iterators are empty!",
+                              numEmptyIterators, iterators.length));
     }
   }
 
