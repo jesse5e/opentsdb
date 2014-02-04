@@ -15,6 +15,7 @@ pom.xml
 *.class
 */target/*
 *.orig
+*.log
 
 #for Intellij
 \.idea
@@ -29,3 +30,8 @@ guava-rpm-maker/\.project
 # for eclipse
 .pydevproject
 .metadata
+.project
+
+# maven
+src-main
+src-test
