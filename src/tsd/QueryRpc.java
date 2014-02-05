@@ -276,7 +276,7 @@ final class QueryRpc implements HttpRpc {
                                  final Key wantedKey,
                                  final int clientCacheTtlSecs)
                                  throws IOException {
-    Entry cachedEntry = queryCache.get(wantedKey);
+    Entry cachedEntry = queryCache.getIfPresent(wantedKey);
     if (cachedEntry != null) {
       File cachedfile = new File(cachedEntry.getKey().getDataFilePath());
       if (!queryCache.staleCacheFile(query, cachedEntry, cachedfile)) {

@@ -15,6 +15,8 @@ package net.opentsdb.tsd;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Charsets;
 import com.google.common.collect.Lists;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -54,25 +56,35 @@ final class QueryResultFileCache {
 
   private static final Logger LOG =
     LoggerFactory.getLogger(QueryResultFileCache.class);
+
   private static final int ONE_DAY_IN_SECONDS = 86400;
   private static final int ONE_WEEK_IN_SECONDS = 86400 * 7;
   private static final int HUNDRED_DAYS_IN_SECONDS = 86400 * 100;
+  /** The size of the in-memory cache of entry files. */
+  private static final long MEM_CACHE_SIZE = 100000;
 
-  /** System call utility. */
+  /** Sequence number for each key. */
   private final AtomicLong sequence;
+  /** System call utility. */
   private final Util util;
+  /** Directory to store cache entry and data files. */
   private final String cacheDir;
+  /** In memory cache for entry files. */
+  private final Cache<String, Entry> entries;
 
   public QueryResultFileCache(final TSDB tsdb) {
     this(tsdb.getConfig().getString("tsd.http.cachedir"), new Util(),
-         System.currentTimeMillis());
+         System.currentTimeMillis(), MEM_CACHE_SIZE);
   }
 
   public QueryResultFileCache(final String cacheDir, Util util,
-                              long startSequence) {
+                              long startSequence, long memCacheSize) {
     this.util = util;
     this.cacheDir = cacheDir;
     sequence = new AtomicLong(startSequence);
+    entries = CacheBuilder.newBuilder()
+        .maximumSize(memCacheSize)
+        .build();
   }
 
   /** Creates and returns a new key builder. */
@@ -99,6 +111,8 @@ final class QueryResultFileCache {
     try {
       writer = util.newPrintWriter(entry.getKey().getKeyFilepath());
       entry.write(writer);
+      // Caches the new entry.
+      entries.put(entry.getKey().getKeyFilepath(), entry);
     } finally {
       if (writer != null) {
         writer.close();
@@ -113,16 +127,37 @@ final class QueryResultFileCache {
    * @return Cached entry if exists. Otherwise, null.
    */
   @Nullable
-  public Entry get(final Key wantedKey) {
+  public Entry getIfPresent(final Key wantedKey) {
     try {
-      // TODO: Cache popular keys in memory by Feb. 28, 2014.
-      File keyFile = util.newFile(wantedKey.getKeyFilepath());
-      if (keyFile.exists()) {
-        List<String> lines = util.readAndCloseFile(wantedKey.getKeyFilepath());
-        return Entry.read(lines.iterator(), util);
+      // TODO: Use get-and-loader and catch the exception for not existing
+      // key.
+      Entry entry = entries.getIfPresent(wantedKey.getKeyFilepath());
+      if (entry == null) {
+        entry = loadEntryIfPresent(wantedKey.getKeyFilepath());
+        if (entry != null) {
+          // Caches the loaded entry.
+          entries.put(entry.getKey().getKeyFilepath(), entry);
+        }
       }
+      return entry;
     } catch (IOException e) {
       LOG.warn(e.getMessage(), e);
+    }
+    return null;
+  }
+
+  /**
+   * Reads an entry from the given file and returns it.
+   *
+   * @param file An entry file to read.
+   * @return An entry if presents. Otherwise null.
+   * @throws IOException If there is an error while reading the file.
+   */
+  @Nullable
+  private Entry loadEntryIfPresent(final String file) throws IOException {
+    if (util.newFile(file).exists()) {
+      List<String> lines = util.readAndCloseFile(file);
+      return Entry.read(lines.iterator(), util);
     }
     return null;
   }
@@ -216,6 +251,7 @@ final class QueryResultFileCache {
 
     /** The file path where this key is stored. */
     private final String keyFilepath;
+    // TODO: Move tempFileBase and suffix to Entry.
     /** base path of the data file and other temporary files. */
     private final String tempFileBase;
     // NOTE: Separating suffix is required to work with {@link GraphHandler}

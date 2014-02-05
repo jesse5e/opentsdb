@@ -19,6 +19,9 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.google.common.collect.Maps;
@@ -57,6 +60,7 @@ public class TestQueryResultFileCache {
   private static final int TIME_107_SECS = 107;
   private static final long TIME_12345678_MILLIS = 12345678L;
   private static final int TIME_100000_SECS = 100000;
+  private static final long MEM_CACHE_SIZE = 10;
 
   private QueryResultFileCache.Util mockUtil;
   private PrintWriter mockPrintWriter;
@@ -71,7 +75,8 @@ public class TestQueryResultFileCache {
     mockHttpQuery = PowerMockito.mock(HttpQuery.class);
     mockChannel = Mockito.mock(Channel.class);
     PowerMockito.when(mockHttpQuery.channel()).thenReturn(mockChannel);
-    cache = new QueryResultFileCache(CACHE_DIR, mockUtil, START_SEQUENCE);
+    cache = new QueryResultFileCache(CACHE_DIR, mockUtil, START_SEQUENCE,
+                                     MEM_CACHE_SIZE);
   }
 
   @Test
@@ -127,19 +132,19 @@ public class TestQueryResultFileCache {
   }
 
   @Test
-  public void testGet_noCachedKey() {
+  public void testGetIfPresent_noCachedKey() {
     Key wantedKey = cache.newKeyBuilder().setSuffix("ffx").build();
     File mockFile = Mockito.mock(File.class);
     Mockito.when(mockFile.exists()).thenReturn(false);
     Mockito.when(mockUtil.newFile(wantedKey.getKeyFilepath()))
         .thenReturn(mockFile);
-    Entry cachedEntry = cache.get(wantedKey);
+    Entry cachedEntry = cache.getIfPresent(wantedKey);
     verify(mockUtil).newFile(wantedKey.getKeyFilepath());
     assertNull(cachedEntry);
   }
 
   @Test
-  public void testGet_cachedKey() throws IOException {
+  public void testGetIfPresent_diskCachedKey() throws IOException {
     Key wantedKey = cache.newKeyBuilder().setSuffix("ffx").build();
     File mockFile = Mockito.mock(File.class);
     Mockito.when(mockFile.exists()).thenReturn(true);
@@ -149,13 +154,71 @@ public class TestQueryResultFileCache {
                                             "temp_foo", "ffx", "543219");
     Mockito.when(mockUtil.readAndCloseFile(wantedKey.getKeyFilepath()))
         .thenReturn(lines);
-    Entry cachedEntry = cache.get(wantedKey);
+    Entry cachedEntry = cache.getIfPresent(wantedKey);
     assertNotNull(cachedEntry);
     Key cachedKey = cachedEntry.getKey();
     assertEquals(wantedKey.getKeyFilepath(), cachedKey.getKeyFilepath());
     assertEquals("temp_foo", cachedKey.getBasepath());
     assertEquals("temp_foo.ffx", cachedKey.getDataFilePath());
     assertEquals(543219L, cachedEntry.getExpirationTimeMillis());
+  }
+
+  @Test
+  public void testPut_cacheNewEntry() throws IOException {
+    Key key = cache.newKeyBuilder().setSuffix("ffx").build();
+    Mockito.when(mockUtil.currentTimeMillis()).thenReturn(TIME_12345678_MILLIS);
+    Entry entry = cache.createEntry(key, TIME_107_SECS);
+    Mockito.when(mockUtil.newPrintWriter(key.getKeyFilepath()))
+        .thenReturn(mockPrintWriter);
+    cache.put(entry);
+    Key sameKey = cache.newKeyBuilder().setSuffix("ffx").build();
+    Entry memCachedEntry = cache.getIfPresent(sameKey);
+    assertEquals(entry, memCachedEntry);
+    // It should not be loaded from disk.
+    verify(mockUtil, never()).readAndCloseFile(anyString());
+  }
+
+  @Test
+  public void testGetIfPresent_cacheLoadedKey() throws IOException {
+    Key wantedKey = cache.newKeyBuilder().setSuffix("ffx").build();
+    File mockFile = Mockito.mock(File.class);
+    Mockito.when(mockFile.exists()).thenReturn(true);
+    Mockito.when(mockUtil.newFile(wantedKey.getKeyFilepath()))
+        .thenReturn(mockFile);
+    List<String> lines = Lists.newArrayList(wantedKey.getKeyFilepath(),
+                                            "temp_foo", "ffx", "543219");
+    Mockito.when(mockUtil.readAndCloseFile(wantedKey.getKeyFilepath()))
+        .thenReturn(lines);
+    Entry diskCachedEntry = cache.getIfPresent(wantedKey);
+    assertNotNull(diskCachedEntry);
+    verify(mockUtil).readAndCloseFile(anyString());
+    Key sameKey = cache.newKeyBuilder().setSuffix("ffx").build();
+    Entry memCachedEntry = cache.getIfPresent(sameKey);
+    assertEquals(diskCachedEntry, memCachedEntry);
+    // It should not be loaded from disk again.
+    verify(mockUtil, times(1)).readAndCloseFile(anyString());
+  }
+
+  @Test
+  public void testGetIfPresent_missForDifferentKey() throws IOException {
+    Key key = cache.newKeyBuilder().setSuffix("ffx").build();
+    Mockito.when(mockUtil.currentTimeMillis()).thenReturn(TIME_12345678_MILLIS);
+    Entry entry = cache.createEntry(key, TIME_107_SECS);
+    Mockito.when(mockUtil.newPrintWriter(key.getKeyFilepath()))
+        .thenReturn(mockPrintWriter);
+    cache.put(entry);
+    // A same key hits the cache.
+    Key sameKey = cache.newKeyBuilder().setSuffix("ffx").build();
+    assertEquals(entry, cache.getIfPresent(sameKey));
+    Key otherKey = cache.newKeyBuilder().setSuffix("foo").build();
+    File mockFile = Mockito.mock(File.class);
+    Mockito.when(mockFile.exists()).thenReturn(false);
+    Mockito.when(mockUtil.newFile(otherKey.getKeyFilepath()))
+        .thenReturn(mockFile);
+    // A different key misses the cache.
+    Entry otherEntry = cache.getIfPresent(otherKey);
+    verify(mockUtil).newFile(otherKey.getKeyFilepath());
+    assertNull(otherEntry);
   }
 
   @Test
