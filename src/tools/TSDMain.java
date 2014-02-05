@@ -16,6 +16,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.concurrent.Executors;
 
 import org.jboss.netty.channel.socket.ServerSocketChannelFactory;
@@ -172,6 +173,11 @@ final class TSDMain {
           config.getInt("tsd.network.port"));
       server.bind(addr);
       log.info("Ready to serve on " + addr);
+
+      if (config.enable_preload_uid_cache()) {
+        // TODO: should this go before we bind() ?
+        preload_uid_cache(tsdb, log);
+      }
     } catch (Throwable e) {
       factory.releaseExternalResources();
       try {
@@ -183,6 +189,22 @@ final class TSDMain {
       throw new RuntimeException("Initialization failed", e);
     }
     // The server is now running in separate threads, we can exit main.
+  }
+
+  /**
+   * Preload UID caches
+   * @param tsdb TSDB client
+   * @param log logger instance
+   */
+  private static void preload_uid_cache(TSDB tsdb, Logger log) {
+    final int max_results = 100000;
+    final String search = "";
+
+    log.info("preload uid cache start");
+    int metrics = tsdb.suggestMetrics(search, max_results).size();
+    int tagk = tsdb.suggestTagNames(search, max_results).size();
+    int tagv = tsdb.suggestTagValues(search, max_results).size();
+    log.info("preload uid cache done: metrics=" + metrics + ", tagk=" + tagk + ", tagv=" + tagv);
   }
 
   private static void registerShutdownHook(final TSDB tsdb) {

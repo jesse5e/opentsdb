@@ -83,7 +83,10 @@ public class Config {
   
   /** tsd.core.tree.enable_processing */
   private boolean enable_tree_processing = false;
-  
+
+  /** tsd.core.preload_uid_cache */
+  private boolean preload_uid_cache = true;
+
   /**
    * The list of properties configured to their defaults or modified by users
    */
@@ -186,7 +189,12 @@ public class Config {
   public boolean enable_tree_processing() {
     return enable_tree_processing;
   }
-  
+
+  /** @return whether or not to preload the uid cache */
+  public boolean enable_preload_uid_cache() {
+    return preload_uid_cache;
+  }
+
   /**
    * Allows for modifying properties after loading
    * 
@@ -356,6 +364,7 @@ public class Config {
     default_map.put("tsd.core.meta.enable_tsuid_tracking", "false");
     default_map.put("tsd.core.plugin_path", "");
     default_map.put("tsd.core.tree.enable_processing", "false");
+    default_map.put("tsd.core.preload_uid_cache", "true");
     default_map.put("tsd.rtpublisher.enable", "false");
     default_map.put("tsd.rtpublisher.plugin", "");
     default_map.put("tsd.search.enable", "false");
@@ -393,6 +402,7 @@ public class Config {
       max_chunked_requests = this.getInt("tsd.http.request.max_chunk");
     }
     enable_tree_processing = this.getBoolean("tsd.core.tree.enable_processing");
+    preload_uid_cache = this.getBoolean("tsd.core.preload_uid_cache");
   }
 
   /**
