@@ -150,9 +150,10 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
       http_expensive_commands.put("suggest", suggest_rpc);
       http_expensive_commands.put("api/suggest", suggest_rpc);
     }
+    QueryResultFileCache queryCache = new QueryResultFileCache(tsdb);
     http_expensive_commands.put("api/serializers", new Serializers());
     http_expensive_commands.put("api/uid", new UniqueIdRpc());
-    http_expensive_commands.put("api/query", new QueryRpc());
+    http_expensive_commands.put("api/query", new QueryRpc(queryCache));
     http_expensive_commands.put("api/tree", new TreeRpc());
     http_expensive_commands.put("api/annotation", new AnnotationRpc());
     http_expensive_commands.put("api/search", new SearchRpc());
@@ -295,6 +296,7 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
     HttpQuery.collectStats(collector);
     GraphHandler.collectStats(collector);
     PutDataPointRpc.collectStats(collector);
+    QueryRpc.collectStats(collector);
   }
 
   // ---------------------------- //

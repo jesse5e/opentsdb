@@ -12,12 +12,18 @@
 // see <http://www.gnu.org/licenses/>.
 package net.opentsdb.tsd;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.handler.codec.http.HttpMethod;
 import org.jboss.netty.handler.codec.http.HttpResponseStatus;
 import org.slf4j.Logger;
@@ -35,6 +41,10 @@ import net.opentsdb.core.TSQuery;
 import net.opentsdb.core.TSSubQuery;
 import net.opentsdb.core.Tags;
 import net.opentsdb.meta.Annotation;
+import net.opentsdb.stats.Histogram;
+import net.opentsdb.stats.StatsCollector;
+import net.opentsdb.tsd.QueryResultFileCache.Entry;
+import net.opentsdb.tsd.QueryResultFileCache.Key;
 
 /**
  * Handles queries for timeseries datapoints. Each request is parsed into a
@@ -48,8 +58,46 @@ import net.opentsdb.meta.Annotation;
  * @since 2.0
  */
 final class QueryRpc implements HttpRpc {
+
   private static final Logger LOG = LoggerFactory.getLogger(QueryRpc.class);
-  
+
+  /** Caches query results. */
+  private final QueryResultFileCache queryCache;
+  /** Number of times a request was served from cache. */
+  private static final AtomicInteger cacheHits = new AtomicInteger();
+  /** Number of times a request missed cache. */
+  private static final AtomicInteger cacheMisses = new AtomicInteger();
+  /**
+   * The latency histogram from cache misses: linear 100 millisecond buckets
+   * between zero and 10 seconds, and then exponential buckets.
+   */
+  private static final Histogram missLatencyMillis =
+      new Histogram(4000000, (short)100, 10000);
+  /**
+   * The latency histogram from cache hits: linear 10 millisecond buckets
+   *  between zero and 1000 milliseconds, and then exponential buckets.
+   */
+  private static final Histogram hitLatencyMillis =
+      new Histogram(10000, (short)10, 1000);
+  /** Number of requests. */
+  private static final AtomicInteger requestCounter = new AtomicInteger();
+
+  QueryRpc(QueryResultFileCache queryCache) {
+    this.queryCache = queryCache;
+  }
+
+  /**
+   * Collects the stats and metrics tracked by this instance.
+   * @param collector The collector to use.
+   */
+  public static void collectStats(final StatsCollector collector) {
+    collector.record("http.api.latency_ms", missLatencyMillis, "type=miss");
+    collector.record("http.api.latency_ms", hitLatencyMillis, "type=hit");
+    collector.record("http.api.requests", cacheHits, "cache=hit");
+    collector.record("http.api.requests", cacheMisses, "cache=miss");
+    collector.record("http.api.requests", requestCounter, "type=all");
+  }
+
   /**
    * Implements the /api/query endpoint to fetch data from OpenTSDB.
    * @param tsdb The TSDB to use for fetching data
@@ -58,7 +106,7 @@ final class QueryRpc implements HttpRpc {
   @Override
   public void execute(final TSDB tsdb, final HttpQuery query) 
     throws IOException {
-    
+    requestCounter.incrementAndGet();
     // only accept GET/POST
     if (query.method() != HttpMethod.GET && query.method() != HttpMethod.POST) {
       throw new BadRequestException(HttpResponseStatus.METHOD_NOT_ALLOWED, 
@@ -97,7 +145,29 @@ final class QueryRpc implements HttpRpc {
       new ArrayList<DataPoints[]>(nqueries);
     final ArrayList<Deferred<DataPoints[]>> deferreds =
       new ArrayList<Deferred<DataPoints[]>>(nqueries);
-    
+
+    long startSecs = TimeUnit.MILLISECONDS.toSeconds(data_query.startTime());
+    long endSecs = TimeUnit.MILLISECONDS.toSeconds(data_query.endTime());
+    long nowMillis = System.currentTimeMillis();
+    long nowSecs = TimeUnit.MILLISECONDS.toSeconds(nowMillis);
+    int clientCacheTtlSecs = QueryResultFileCache.clientCacheTtl(
+        query, startSecs, endSecs, nowSecs);
+    final Key cacheKey = queryCache.newKeyBuilder()
+        .setCacheType("api")
+        .setQuery(query)
+        .setStartTime(startSecs)
+        .setEndTime(endSecs)
+        .setSuffix("results")
+        .build();
+    if (!query.hasQueryStringParam("nocache")) {
+      // Serves from the cache.
+      if (replyFromCache(query, cacheKey, clientCacheTtlSecs)) {
+        cacheHits.incrementAndGet();
+        hitLatencyMillis.add(elapsedTimeMillis(nowMillis));
+        return;
+      }
+    }
+
     for (int i = 0; i < nqueries; i++) {
       deferreds.add(tsdbqueries[i].runAsync());
     }
@@ -138,14 +208,84 @@ final class QueryRpc implements HttpRpc {
     switch (query.apiVersion()) {
     case 0:
     case 1:
-      query.sendReply(query.serializer().formatQueryV1(data_query, results, 
-          globals));
+      int serverCacheTtlSecs = QueryResultFileCache.serverCacheTtl(
+          query, startSecs, endSecs, nowSecs);
+      Entry cacheEntry = queryCache.createEntry(cacheKey, serverCacheTtlSecs);
+      replyFromResults(query, data_query, results, globals, cacheEntry,
+                       clientCacheTtlSecs);
+      cacheMisses.incrementAndGet();
+      missLatencyMillis.add(elapsedTimeMillis(nowMillis));
       break;
     default: 
       throw new BadRequestException(HttpResponseStatus.NOT_IMPLEMENTED, 
           "Requested API version not implemented", "Version " + 
           query.apiVersion() + " is not implemented");
     }
+  }
+
+  /**
+   * Sends reply from the output of a query execution.
+   *
+   * @param query The current HTTP query
+   * @param tsQuery TSQuery after parsing the HTTP query
+   * @param results Output data points array of the query
+   * @param globals Global annotations
+   * @param cacheEntry Cache entry to be used to cache results
+   * @param clientCacheTtlSecs The cache TTL to send down to the client
+   * @throws IOException If there is any IO error
+   */
+  private void replyFromResults(final HttpQuery query,
+                                final TSQuery tsQuery,
+                                final List<DataPoints[]> results,
+                                final List<Annotation> globals,
+                                final Entry cacheEntry,
+                                final int clientCacheTtlSecs)
+                                    throws IOException {
+    ChannelBuffer buffer = query.serializer().formatQueryV1(tsQuery, results,
+                                                            globals);
+    OutputStream out = null;
+    try {
+      // TODO: Reply before we save results to a file.
+      out = new FileOutputStream(cacheEntry.getKey().getDataFilePath());
+      while (buffer.readable()) {
+        byte[] byteBuffer = new byte[buffer.readableBytes()];
+        buffer.readBytes(byteBuffer);
+        out.write(byteBuffer);
+      }
+    } finally {
+      if (out != null) {
+        out.close();
+      }
+    }
+    queryCache.put(cacheEntry);
+    String dataFilePath = cacheEntry.getKey().getDataFilePath();
+    query.sendFile(dataFilePath, clientCacheTtlSecs);
+    logInfo(query, String.format("Cached query results at %s.", dataFilePath));
+  }
+
+  /**
+   * Sends cached results to the client.
+   *
+   * @param query The current HTTP query
+   * @param wantedKey Cache key to find the cached results of the query.
+   * @param clientCacheTtlSecs The cache TTL to send down to the client
+   * @return true if a valid cache entry was sent back to the client.
+   * @throws IOException If there is any IO error
+   */
+  private boolean replyFromCache(final HttpQuery query,
+                                 final Key wantedKey,
+                                 final int clientCacheTtlSecs)
+                                 throws IOException {
+    Entry cachedEntry = queryCache.get(wantedKey);
+    if (cachedEntry != null) {
+      File cachedfile = new File(cachedEntry.getKey().getDataFilePath());
+      if (!queryCache.staleCacheFile(query, cachedEntry, cachedfile)) {
+        query.sendFile(cachedfile.getAbsolutePath(), clientCacheTtlSecs);
+        logInfo(query, "Query was served from the cache.");
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -367,4 +507,17 @@ final class QueryRpc implements HttpRpc {
            "Max value of counter was not a number, received '" + parts[1] + "'");
      }
    }
+
+  /** Calculates an integer elapsed time in milliseconds for Histogram. */
+  private int elapsedTimeMillis(long startMillis) {
+    return (int)(System.currentTimeMillis() - startMillis);
+  }
+
+  // ---------------- //
+  // Logging helpers. //
+  // ---------------- //
+
+  private static void logInfo(final HttpQuery query, final String msg) {
+    LOG.info(query.channel().toString() + ' ' + msg);
+  }
 }
