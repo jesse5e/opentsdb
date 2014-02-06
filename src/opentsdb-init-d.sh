@@ -28,9 +28,15 @@ start() {
   ulimit -n $MAX_OPEN_FILES
 
   # TODO: The tsdb program does not run in background. Make it happen.
-  # TODO: Support non-root user and group.
-  JVMARGS="-DLOG_FILE_PREFIX=${LOG_FILE_PREFIX} -enableassertions -enablesystemassertions" \
-      $PROG $PROG_OPTS 1> ${LOG_FILE_PREFIX}opentsdb.out 2> ${LOG_FILE_PREFIX}opentsdb.err &
+  # TODO: Support non-root user and group. Currently running as root
+  # is required because /usr/share/opentsdb/opentsdb_restart.py
+  # must be called as root.
+
+  # Set a default value for JVMARGS
+  : ${JVMXMX:=-Xmx6000m}
+  : ${JVMARGS:=-DLOG_FILE_PREFIX=${LOG_FILE_PREFIX} -enableassertions -enablesystemassertions $JVMXMX -XX:OnOutOfMemoryError=/usr/share/opentsdb/opentsdb_restart.py}
+  export JVMARGS
+  $PROG $PROG_OPTS 1> ${LOG_FILE_PREFIX}opentsdb.out 2> ${LOG_FILE_PREFIX}opentsdb.err &
 }
 
 stop() {
