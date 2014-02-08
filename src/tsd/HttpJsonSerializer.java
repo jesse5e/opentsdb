@@ -21,6 +21,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
+
+import javax.annotation.Nullable;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBufferOutputStream;
@@ -30,12 +33,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonGenerationException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.google.common.annotations.VisibleForTesting;
 import com.stumbleupon.async.Deferred;
 
 import net.opentsdb.core.DataPoint;
 import net.opentsdb.core.DataPoints;
 import net.opentsdb.core.IncomingDataPoint;
+import net.opentsdb.core.SeekableView;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.core.TSQuery;
 import net.opentsdb.meta.Annotation;
@@ -474,123 +480,21 @@ class HttpJsonSerializer extends HttpSerializer {
    * @param globals An optional list of global annotation objects
    * @return A ChannelBuffer object to pass on to the caller
    */
-  public ChannelBuffer formatQueryV1(final TSQuery data_query, 
-      final List<DataPoints[]> results, final List<Annotation> globals) {
-    
-    final boolean as_arrays = this.query.hasQueryStringParam("arrays");
-    final String jsonp = this.query.getQueryStringParam("jsonp");
-    
-    // todo - this should be streamed at some point since it could be HUGE
-    final ChannelBuffer response = ChannelBuffers.dynamicBuffer();
-    final OutputStream output = new ChannelBufferOutputStream(response);
+  public ChannelBuffer formatQueryV1(final TSQuery data_query,
+                                     final List<DataPoints[]> results,
+                                     final List<Annotation> globals) {
     try {
+      final String jsonp = query.getQueryStringParam("jsonp");
+      // todo - this should be streamed at some point since it could be HUGE
+      final ChannelBuffer response = ChannelBuffers.dynamicBuffer();
+      final OutputStream output = new ChannelBufferOutputStream(response);
       // don't forget jsonp
       if (jsonp != null && !jsonp.isEmpty()) {
         output.write((jsonp + "(").getBytes(query.getCharset()));
       }
       JsonGenerator json = JSON.getFactory().createGenerator(output);
-      json.writeStartArray();
-      
-      for (DataPoints[] separate_dps : results) {
-        for (DataPoints dps : separate_dps) {
-          json.writeStartObject();
-          
-          json.writeStringField("metric", dps.metricName());
-          
-          json.writeFieldName("tags");
-          json.writeStartObject();
-          if (dps.getTags() != null) {
-            for (Map.Entry<String, String> tag : dps.getTags().entrySet()) {
-              json.writeStringField(tag.getKey(), tag.getValue());
-            }
-          }
-          json.writeEndObject();
-          
-          json.writeFieldName("aggregateTags");
-          json.writeStartArray();
-          if (dps.getAggregatedTags() != null) {
-            for (String atag : dps.getAggregatedTags()) {
-              json.writeString(atag);
-            }
-          }
-          json.writeEndArray();
-          
-          if (data_query.getShowTSUIDs()) {
-            json.writeFieldName("tsuids");
-            json.writeStartArray();
-            final List<String> tsuids = dps.getTSUIDs();
-            Collections.sort(tsuids);
-            for (String tsuid : tsuids) {
-              json.writeString(tsuid);
-            }
-            json.writeEndArray();
-          }
-          
-          if (!data_query.getNoAnnotations()) {
-            final List<Annotation> annotations = dps.getAnnotations();
-            if (annotations != null) {
-              Collections.sort(annotations);
-              json.writeArrayFieldStart("annotations");
-              for (Annotation note : annotations) {
-                json.writeObject(note);
-              }
-              json.writeEndArray();
-            }
-            
-            if (globals != null && !globals.isEmpty()) {
-              Collections.sort(globals);
-              json.writeArrayFieldStart("globalAnnotations");
-              for (Annotation note : globals) {
-                json.writeObject(note);
-              }
-              json.writeEndArray();
-            }
-          }
-          
-          // now the fun stuff, dump the data
-          json.writeFieldName("dps");
-          
-          // default is to write a map, otherwise write arrays
-          if (as_arrays) {
-            json.writeStartArray();
-            for (final DataPoint dp : dps) {
-              if (dp.timestamp() < data_query.startTime() || 
-                  dp.timestamp() > data_query.endTime()) {
-                continue;
-              }
-              final long timestamp = data_query.getMsResolution() ? 
-                  dp.timestamp() : dp.timestamp() / 1000;
-              json.writeStartArray();
-              json.writeNumber(timestamp);
-              json.writeNumber(
-                  dp.isInteger() ? dp.longValue() : dp.doubleValue());
-              json.writeEndArray();
-            }
-            json.writeEndArray();
-          } else {
-            json.writeStartObject();
-            for (final DataPoint dp : dps) {
-              if (dp.timestamp() < (data_query.startTime()) || 
-                  dp.timestamp() > (data_query.endTime())) {
-                continue;
-              }
-              final long timestamp = data_query.getMsResolution() ? 
-                  dp.timestamp() : dp.timestamp() / 1000;
-              json.writeNumberField(Long.toString(timestamp), 
-                  dp.isInteger() ? dp.longValue() : dp.doubleValue());
-            }
-            json.writeEndObject();
-          }
-
-          // close the results for this particular query
-          json.writeEndObject();
-        }
-      }
-    
-      // close
-      json.writeEndArray();
+      internalFormatQueryV1(json, this.query, data_query, results, globals);
       json.close();
-      
       if (jsonp != null && !jsonp.isEmpty()) {
         output.write(")".getBytes());
       }
@@ -600,7 +504,186 @@ class HttpJsonSerializer extends HttpSerializer {
       throw new RuntimeException(e);
     }
   }
-  
+
+  private static void internalFormatQueryV1(final JsonGenerator json,
+                                            final HttpQuery query,
+                                            final TSQuery data_query,
+                                            final List<DataPoints[]> results,
+                                            final List<Annotation> globals)
+          throws IOException {
+    // default is to write a map, otherwise write arrays
+    final boolean as_arrays = query.hasQueryStringParam("arrays");
+    json.writeStartArray();
+
+    for (DataPoints[] separate_dps : results) {
+      for (DataPoints dps : separate_dps) {
+        // NOTE: Re-uses the iterator and the first data point later at this
+        // function because creating another iterator could be very expensive.
+        final SeekableView dpIterator = dps.iterator();
+        DataPoint firstDp = findFirstDataPointInRange(data_query, dpIterator);
+        if (firstDp == null) {
+          // Returns nothing to user if there is no data points to return.
+          continue;
+        }
+
+        json.writeStartObject();
+
+        json.writeStringField("metric", dps.metricName());
+
+        json.writeFieldName("tags");
+        json.writeStartObject();
+        if (dps.getTags() != null) {
+          for (Map.Entry<String, String> tag : dps.getTags().entrySet()) {
+            json.writeStringField(tag.getKey(), tag.getValue());
+          }
+        }
+        json.writeEndObject();
+
+        json.writeFieldName("aggregateTags");
+        json.writeStartArray();
+        if (dps.getAggregatedTags() != null) {
+          for (String atag : dps.getAggregatedTags()) {
+            json.writeString(atag);
+          }
+        }
+        json.writeEndArray();
+
+        if (data_query.getShowTSUIDs()) {
+          json.writeFieldName("tsuids");
+          json.writeStartArray();
+          final List<String> tsuids = dps.getTSUIDs();
+          Collections.sort(tsuids);
+          for (String tsuid : tsuids) {
+            json.writeString(tsuid);
+          }
+          json.writeEndArray();
+        }
+
+        if (!data_query.getNoAnnotations()) {
+          final List<Annotation> annotations = dps.getAnnotations();
+          if (annotations != null) {
+            Collections.sort(annotations);
+            json.writeArrayFieldStart("annotations");
+            for (Annotation note : annotations) {
+              json.writeObject(note);
+            }
+            json.writeEndArray();
+          }
+
+          if (globals != null && !globals.isEmpty()) {
+            Collections.sort(globals);
+            json.writeArrayFieldStart("globalAnnotations");
+            for (Annotation note : globals) {
+              json.writeObject(note);
+            }
+            json.writeEndArray();
+          }
+        }
+
+        // now the fun stuff, dump the data
+        json.writeFieldName("dps");
+        writeJsonDataPoints(json, data_query, firstDp, dpIterator, as_arrays);
+        // close the results for this particular query
+        json.writeEndObject();
+      }
+    }
+    json.writeEndArray();
+  }
+
+  /**
+   * Returns the first data point in the query time range.
+   *
+   * @param data_query A TSQuery
+   * @param dpIterator Iterator of data points
+   * @return The first data point in the query time range. Null if there is
+   * no data point in the range.
+   */
+  @Nullable
+  private static DataPoint findFirstDataPointInRange(
+      final TSQuery data_query, final SeekableView dpIterator) {
+    while (dpIterator.hasNext()) {
+      final DataPoint dp = dpIterator.next();
+      if (dp.timestamp() < data_query.startTime() ||
+          dp.timestamp() > data_query.endTime()) {
+        continue;
+      }
+      return dp;
+    }
+    return null;
+  }
+
+  /**
+   * Writes a series of data points in JSON.
+   *
+   * @param json A JSON generator
+   * @param data_query A TSQuery
+   * @param firstDp The first data point to write
+   * @param dpIterator Iterator of data points except the first one
+   * @param as_arrays true to write as array entries
+   * @throws JsonGenerationException
+   * @throws IOException
+   */
+  private static void writeJsonDataPoints(final JsonGenerator json,
+                                          final TSQuery data_query,
+                                          final DataPoint firstDp,
+                                          final SeekableView dpIterator,
+                                          final boolean as_arrays)
+                                          throws JsonGenerationException,
+                                              IOException {
+    // TODO: Use the visitor pattern instead of as_arrays.
+    if (as_arrays) {
+      json.writeStartArray();
+    } else {
+      json.writeStartObject();
+    }
+    final TimeUnit desiredTimeUnit = data_query.getMsResolution() ?
+        TimeUnit.MILLISECONDS : TimeUnit.SECONDS;
+    writeJsonDataPoint(json, as_arrays, firstDp, desiredTimeUnit);
+    while (dpIterator.hasNext()) {
+      final DataPoint dp = dpIterator.next();
+      if (dp.timestamp() < (data_query.startTime()) ||
+          dp.timestamp() > (data_query.endTime())) {
+        continue;
+      }
+      writeJsonDataPoint(json, as_arrays, dp, desiredTimeUnit);
+    }
+    if (as_arrays) {
+      json.writeEndArray();
+    } else {
+      json.writeEndObject();
+    }
+  }
+
+  /**
+   * Writes a data point in JSON.
+   *
+   * @param json A JSON generator
+   * @param as_arrays true to write as array entries
+   * @param dp Data point to write
+   * @param timeUnit TimeUnit of timestamp
+   * @throws JsonGenerationException
+   * @throws IOException
+   */
+  private static void writeJsonDataPoint(final JsonGenerator json,
+                                         final boolean as_arrays,
+                                         final DataPoint dp,
+                                         final TimeUnit desiredTimeUnit)
+                                         throws JsonGenerationException,
+                                                IOException {
+    final long timestamp = desiredTimeUnit.convert(dp.timestamp(),
+                                                   TimeUnit.MILLISECONDS);
+    if (as_arrays) {
+      // Writes a timestamp and a double value as array entries.
+      json.writeNumber(timestamp);
+      // TODO: Keep the original type to not lose the precision when a long
+      // should be converted to a double.
+      json.writeNumber(dp.toDouble());
+    } else {
+      // Writes a data point as a map entry.
+      json.writeNumberField(Long.toString(timestamp), dp.toDouble());
+    }
+  }
+
   /**
    * Format a single UIDMeta object
    * @param meta The UIDMeta object to serialize
@@ -751,5 +834,31 @@ class HttpJsonSerializer extends HttpSerializer {
           obj));
     }
     return ChannelBuffers.wrappedBuffer(JSON.serializeToBytes(obj));
+  }
+
+  /** Helper class for unit tests.  */
+  @VisibleForTesting
+  static class ForTesting {
+
+    void writeJsonDataPoints(final JsonGenerator json,
+                             final TSQuery data_query,
+                             final DataPoint firstDp,
+                             final SeekableView dpIterator,
+                             final boolean as_arrays)
+                             throws JsonGenerationException,
+                                 IOException {
+      HttpJsonSerializer.writeJsonDataPoints(json, data_query, firstDp,
+                                             dpIterator, as_arrays);
+    }
+
+    void internalFormatQueryV1(final JsonGenerator json,
+                               final HttpQuery query,
+                               final TSQuery data_query,
+                               final List<DataPoints[]> results,
+                               final List<Annotation> globals)
+                                   throws IOException {
+      HttpJsonSerializer.internalFormatQueryV1(json, query, data_query, results,
+                                               globals);
+    }
   }
 }

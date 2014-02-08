@@ -14,14 +14,34 @@ package net.opentsdb.tsd;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.mockito.Mockito.spy;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import com.fasterxml.jackson.core.JsonGenerationException;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.stumbleupon.async.Deferred;
+
+import net.opentsdb.core.DataPoint;
+import net.opentsdb.core.DataPoints;
+import net.opentsdb.core.MutableDataPoint;
+import net.opentsdb.core.SeekableView;
+import net.opentsdb.core.SeekableViewsForTest;
 import net.opentsdb.core.TSDB;
+import net.opentsdb.core.TSQuery;
+import net.opentsdb.core.TestTSSubQuery;
+import net.opentsdb.meta.Annotation;
+import net.opentsdb.tsd.HttpJsonSerializer.ForTesting;
 import net.opentsdb.utils.Config;
+import net.opentsdb.utils.JSON;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.junit.Before;
@@ -38,6 +58,15 @@ import org.powermock.modules.junit4.PowerMockRunner;
 @RunWith(PowerMockRunner.class)
 @PrepareForTest({TSDB.class, Config.class, HttpQuery.class})
 public final class TestHttpJsonSerializer {
+
+  private static final long BASE_TIME = 1356998400000L;
+  private static final DataPoint[] DATA_POINTS = new DataPoint[] {
+    MutableDataPoint.ofLongValue(BASE_TIME, 40),
+    MutableDataPoint.ofLongValue(BASE_TIME + 2000000, 50),
+    MutableDataPoint.ofLongValue(BASE_TIME + 3600000, 40),
+    MutableDataPoint.ofLongValue(BASE_TIME + 3700000, 30)
+  };
+
   private TSDB tsdb = null;
 
   @Before
@@ -156,5 +185,215 @@ public final class TestHttpJsonSerializer {
     assertEquals("[{\"formatters\":",
         serdes.formatSerializersV1().toString(Charset.forName("UTF-8"))
         .substring(0, 15));
+  }
+
+  @Test
+  public void testWriteJsonDataPoints_map() throws JsonGenerationException,
+                                                   IOException {
+    SeekableView source = spy(SeekableViewsForTest.fromArray(DATA_POINTS));
+    TSQuery data_query = getTestDataQuery();
+    DataPoint firstDp = source.next();
+    SeekableView dpIterator = source;
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    JsonGenerator json = JSON.getFactory().createGenerator(output);
+    boolean as_arrays = false;
+    ForTesting testing = new HttpJsonSerializer.ForTesting();
+    testing.writeJsonDataPoints(json, data_query, firstDp, dpIterator,
+                                as_arrays);
+    json.close();
+    String expected = "{\"1356998400\":40.0,\"1357000400\":50.0," +
+                      "\"1357002000\":40.0}";
+    assertEquals(expected, output.toString());
+  }
+
+  @Test
+  public void testWriteJsonDataPoints_array() throws JsonGenerationException,
+                                                     IOException {
+    SeekableView source = spy(SeekableViewsForTest.fromArray(DATA_POINTS));
+    TSQuery data_query = getTestDataQuery();
+    DataPoint firstDp = source.next();
+    SeekableView dpIterator = source;
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    JsonGenerator json = JSON.getFactory().createGenerator(output);
+    boolean as_arrays = true;
+    ForTesting testing = new HttpJsonSerializer.ForTesting();
+    testing.writeJsonDataPoints(json, data_query, firstDp, dpIterator,
+                                as_arrays);
+    json.close();
+    String expected = "[1356998400,40.0,1357000400,50.0,1357002000,40.0]";
+    assertEquals(expected, output.toString());
+  }
+
+  @Test
+  public void testFormatQueryV1_map() throws IOException {
+    SeekableView source = spy(SeekableViewsForTest.fromArray(DATA_POINTS));
+    TSQuery data_query = getTestDataQuery();
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    JsonGenerator json = JSON.getFactory().createGenerator(output);
+    ForTesting testing = new HttpJsonSerializer.ForTesting();
+    HttpQuery query = NettyMocks.getQuery(tsdb,
+                                          "?start=1356998400&end=1357002000");
+    List<DataPoints[]> results = Lists.newArrayList();
+    DataPoints[] mockDataPointsArray = new DataPoints[] {
+        createMockDataPoints("first", source, 4)
+    };
+    results.add(mockDataPointsArray );
+    List<Annotation> globals = null;
+    testing.internalFormatQueryV1(json, query, data_query, results, globals);
+    json.close();
+    String expected =
+        "[{\"metric\":\"first\",\"tags\":{\"first.TagKey\":" +
+        "\"first.TagValue\"},\"aggregateTags\":[\"first.AggTags\"]," +
+        "\"dps\":{\"1356998400\":40.0,\"1357000400\":50.0,\"1357002000\":40.0}}]";
+    assertEquals(expected, output.toString());
+  }
+
+  @Test
+  public void testFormatQueryV1_arrays() throws IOException {
+    SeekableView source = spy(SeekableViewsForTest.fromArray(DATA_POINTS));
+    TSQuery data_query = getTestDataQuery();
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    JsonGenerator json = JSON.getFactory().createGenerator(output);
+    ForTesting testing = new HttpJsonSerializer.ForTesting();
+    HttpQuery query = NettyMocks.getQuery(tsdb,
+        "?start=1356998400&end=1357002000&arrays");
+    List<DataPoints[]> results = Lists.newArrayList();
+    DataPoints[] mockDataPointsArray = new DataPoints[] {
+        createMockDataPoints("first", source, 4)
+    };
+    results.add(mockDataPointsArray );
+    List<Annotation> globals = null;
+    testing.internalFormatQueryV1(json, query, data_query, results, globals);
+    json.close();
+    String expected =
+        "[{\"metric\":\"first\",\"tags\":{\"first.TagKey\":" +
+        "\"first.TagValue\"},\"aggregateTags\":[\"first.AggTags\"]," +
+        "\"dps\":[1356998400,40.0,1357000400,50.0,1357002000,40.0]}]";
+    assertEquals(expected, output.toString());
+  }
+
+  @Test
+  public void testFormatQueryV1_ignoreEmptyTimeSeries() throws IOException {
+    SeekableView source = spy(SeekableViewsForTest.fromArray(
+        new DataPoint[] {
+            MutableDataPoint.ofLongValue(BASE_TIME + 30000, 40),
+        }));
+    SeekableView emptySource = spy(SeekableViewsForTest.fromArray(
+        new DataPoint[] {
+            MutableDataPoint.ofLongValue(BASE_TIME - 20000, 40),
+        }));
+    TSQuery data_query = getTestDataQuery();
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    JsonGenerator json = JSON.getFactory().createGenerator(output);
+    ForTesting testing = new HttpJsonSerializer.ForTesting();
+    HttpQuery query = NettyMocks.getQuery(tsdb,
+                                          "?start=1356998400&end=1357002000");
+    List<DataPoints[]> results = Lists.newArrayList();
+    DataPoints[] mockDataPointsArray = new DataPoints[] {
+        createMockDataPoints("empty", emptySource, 1),
+        createMockDataPoints("first", source, 1)
+    };
+    results.add(mockDataPointsArray );
+    List<Annotation> globals = null;
+    testing.internalFormatQueryV1(json, query, data_query, results, globals);
+    json.close();
+    String expected =
+        "[{\"metric\":\"first\",\"tags\":{\"first.TagKey\":" +
+        "\"first.TagValue\"},\"aggregateTags\":[\"first.AggTags\"]," +
+        "\"dps\":{\"1356998430\":40.0}}]";
+    assertEquals(expected, output.toString());
+  }
+
+  private TSQuery getTestDataQuery() {
+    final TSQuery query = new TSQuery();
+    query.setStart(Long.toString(1356998400L));
+    query.setEnd(Long.toString(1356998400L + 3600));
+    query.addSubQuery(TestTSSubQuery.getMetricForValidate());
+    query.validateAndSetQuery();
+    return query;
+  }
+
+  private DataPoints createMockDataPoints(final String metricName,
+                                          final SeekableView iterator,
+                                          final int size) {
+    return new DataPoints() {
+
+      @Override
+      public String metricName() {
+        return metricName;
+      }
+
+      @Override
+      public Deferred<String> metricNameAsync() {
+        return null;
+      }
+
+      @Override
+      public Map<String, String> getTags() {
+        Map<String, String> tags = Maps.newTreeMap();
+        tags.put(metricName + ".TagKey", metricName + ".TagValue");
+        return tags ;
+      }
+
+      @Override
+      public Deferred<Map<String, String>> getTagsAsync() {
+        return null;
+      }
+
+      @Override
+      public List<String> getAggregatedTags() {
+        return Lists.newArrayList(metricName + ".AggTags");
+      }
+
+      @Override
+      public Deferred<List<String>> getAggregatedTagsAsync() {
+        return null;
+      }
+
+      @Override
+      public List<String> getTSUIDs() {
+        return null;
+      }
+
+      @Override
+      public List<Annotation> getAnnotations() {
+        return null;
+      }
+
+      @Override
+      public int size() {
+        return size;
+      }
+
+      @Override
+      public int aggregatedSize() {
+        return size;
+      }
+
+      @Override
+      public SeekableView iterator() {
+        return iterator;
+      }
+
+      @Override
+      public long timestamp(int i) {
+        throw new UnsupportedOperationException();
+      }
+
+      @Override
+      public boolean isInteger(int i) {
+        throw new UnsupportedOperationException();
+      }
+
+      @Override
+      public long longValue(int i) {
+        throw new UnsupportedOperationException();
+      }
+
+      @Override
+      public double doubleValue(int i) {
+        throw new UnsupportedOperationException();
+      }
+    };
   }
 }
