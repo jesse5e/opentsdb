@@ -210,7 +210,8 @@ final class QueryRpc implements HttpRpc {
     case 1:
       int serverCacheTtlSecs = QueryResultFileCache.serverCacheTtl(
           query, startSecs, endSecs, nowSecs);
-      Entry cacheEntry = queryCache.createEntry(cacheKey, serverCacheTtlSecs);
+      Entry cacheEntry = queryCache.createEntry(cacheKey, "results",
+                                                serverCacheTtlSecs);
       replyFromResults(query, data_query, results, globals, cacheEntry,
                        clientCacheTtlSecs);
       cacheMisses.incrementAndGet();
@@ -246,7 +247,7 @@ final class QueryRpc implements HttpRpc {
     OutputStream out = null;
     try {
       // TODO: Reply before we save results to a file.
-      out = new FileOutputStream(cacheEntry.getKey().getDataFilePath());
+      out = new FileOutputStream(cacheEntry.getDataFilePath());
       while (buffer.readable()) {
         byte[] byteBuffer = new byte[buffer.readableBytes()];
         buffer.readBytes(byteBuffer);
@@ -258,7 +259,7 @@ final class QueryRpc implements HttpRpc {
       }
     }
     queryCache.put(cacheEntry);
-    String dataFilePath = cacheEntry.getKey().getDataFilePath();
+    String dataFilePath = cacheEntry.getDataFilePath();
     query.sendFile(dataFilePath, clientCacheTtlSecs);
     logInfo(query, String.format("Cached query results at %s.", dataFilePath));
   }
@@ -278,7 +279,7 @@ final class QueryRpc implements HttpRpc {
                                  throws IOException {
     Entry cachedEntry = queryCache.getIfPresent(wantedKey);
     if (cachedEntry != null) {
-      File cachedfile = new File(cachedEntry.getKey().getDataFilePath());
+      File cachedfile = new File(cachedEntry.getDataFilePath());
       if (!queryCache.staleCacheFile(query, cachedEntry, cachedfile)) {
         query.sendFile(cachedfile.getAbsolutePath(), clientCacheTtlSecs);
         logInfo(query, "Query was served from the cache.");

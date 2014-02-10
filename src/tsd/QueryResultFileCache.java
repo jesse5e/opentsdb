@@ -63,7 +63,7 @@ final class QueryResultFileCache {
   /** The size of the in-memory cache of entry files. */
   private static final long MEM_CACHE_SIZE = 100000;
 
-  /** Sequence number for each key. */
+  /** Sequence number for each entry. */
   private final AtomicLong sequence;
   /** System call utility. */
   private final Util util;
@@ -89,13 +89,22 @@ final class QueryResultFileCache {
 
   /** Creates and returns a new key builder. */
   public KeyBuilder newKeyBuilder(){
-    return new KeyBuilder(cacheDir, sequence);
+    return new KeyBuilder();
   }
 
-  public Entry createEntry(Key key, int cacheTtlSecs) {
+  /**
+   * Creates a new entry.
+   *
+   * @param key The key of the new entry
+   * @param suffix The suffix of the new entry
+   * @param cacheTtlSecs The Time-To-Live of the new entry
+   * @return A new cache entry
+   */
+  public Entry createEntry(Key key, String suffix, int cacheTtlSecs) {
     long expirationMillis = util.currentTimeMillis() +
                             TimeUnit.SECONDS.toMillis(cacheTtlSecs);
-    return new Entry(key, expirationMillis, util);
+    return Entry.create(key, expirationMillis, cacheDir, suffix,
+                        sequence.incrementAndGet(), util);
   }
 
   /**
@@ -107,17 +116,9 @@ final class QueryResultFileCache {
   public synchronized void put(final Entry entry) throws IOException {
     // TODO: Use the FileLock instead of this synchronization.
     // TODO: Add additional information to check corruption to retrieve data.
-    PrintWriter writer = null;
-    try {
-      writer = util.newPrintWriter(entry.getKey().getKeyFilepath());
-      entry.write(writer);
-      // Caches the new entry.
-      entries.put(entry.getKey().getKeyFilepath(), entry);
-    } finally {
-      if (writer != null) {
-        writer.close();
-      }
-    }
+    entry.write();
+    // Caches the new entry.
+    entries.put(entry.key.key, entry);
   }
 
   /**
@@ -131,33 +132,17 @@ final class QueryResultFileCache {
     try {
       // TODO: Use get-and-loader and catch the exception for not existing
       // key.
-      Entry entry = entries.getIfPresent(wantedKey.getKeyFilepath());
+      Entry entry = entries.getIfPresent(wantedKey.key);
       if (entry == null) {
-        entry = loadEntryIfPresent(wantedKey.getKeyFilepath());
+        entry = Entry.loadEntryIfPresent(wantedKey, cacheDir, util);
         if (entry != null) {
           // Caches the loaded entry.
-          entries.put(entry.getKey().getKeyFilepath(), entry);
+          entries.put(entry.getKey().key, entry);
         }
       }
       return entry;
     } catch (IOException e) {
       LOG.warn(e.getMessage(), e);
-    }
-    return null;
-  }
-
-  /**
-   * Reads an entry from the given file and returns it.
-   *
-   * @param file An entry file to read.
-   * @return An entry if presents. Otherwise null.
-   * @throws IOException If there is an error while reading the file.
-   */
-  @Nullable
-  private Entry loadEntryIfPresent(final String file) throws IOException {
-    if (util.newFile(file).exists()) {
-      List<String> lines = util.readAndCloseFile(file);
-      return Entry.read(lines.iterator(), util);
     }
     return null;
   }
@@ -175,6 +160,8 @@ final class QueryResultFileCache {
     // TODO: Add validation of the cached file.
     final long mtime = TimeUnit.MILLISECONDS.toSeconds(cachedfile.lastModified());
     if (mtime <= 0) {
+      logInfo(query, String.format("Cached file @%s cannot be read: mtime=%d.",
+                                   cachedfile.getPath(), mtime));
       return true;  // File doesn't exist, or can't be read.
     }
     if (entry.isExpired()) {
@@ -199,9 +186,9 @@ final class QueryResultFileCache {
    * @return A positive integer, in seconds.
    */
   static int clientCacheTtl(final HttpQuery query,
-                                   final long startTimeSecs,
-                                   final long endTimeSecs,
-                                   final long nowSecs) {
+                            final long startTimeSecs,
+                            final long endTimeSecs,
+                            final long nowSecs) {
     // If the end time is in the future (1), make the graph uncacheable.
     // Otherwise, if the end time is far enough in the past (2) such that
     // no TSD can still be writing to rows for that time span and it's not
@@ -234,9 +221,9 @@ final class QueryResultFileCache {
    * @return A positive integer, in seconds.
    */
   static int serverCacheTtl(final HttpQuery query,
-                                   final long startTimeSecs,
-                                   final long endTimeSecs,
-                                   final long nowSecs) {
+                            final long startTimeSecs,
+                            final long endTimeSecs,
+                            final long nowSecs) {
     if (endTimeSecs < nowSecs - ONE_WEEK_IN_SECONDS) {
       // Results for old time range can be cached very long time.
       return HUNDRED_DAYS_IN_SECONDS;
@@ -247,86 +234,58 @@ final class QueryResultFileCache {
   }
 
   /** Key for query results. */
-  public static class Key {
+  static class Key {
 
-    /** The file path where this key is stored. */
-    private final String keyFilepath;
-    // TODO: Move tempFileBase and suffix to Entry.
-    /** base path of the data file and other temporary files. */
-    private final String tempFileBase;
-    // NOTE: Separating suffix is required to work with {@link GraphHandler}
-    // class. It expects the suffix should match with the file type and
-    // it also expects the file name should be tempFileBase + "." + suffix.
-    /** The extension of query result file. */
-    private final String suffix;
+    /** A string key. */
+    private final String key;
 
     @VisibleForTesting
-    Key(String keyFilepath, String tempFileBase, String suffix) {
-      this.keyFilepath = keyFilepath;
-      this.tempFileBase = tempFileBase;
-      this.suffix = suffix;
+    Key(String key) {
+      this.key = key;
     }
 
-    /** Returns the path of a key entry file at the cache directory. */
-    public String getKeyFilepath() {
-      return keyFilepath;
-    }
-
-    /** Returns the base path of data and files at the cache directory. */
-    public String getBasepath() {
-      return tempFileBase;
-    }
-
-    /** Returns the path of query result file at the cache directory. */
-    public String getDataFilePath() {
-      return tempFileBase + "." + suffix;
-    }
-
-    /** Creates a new Key instance with the given suffix. */
-    public Key newKeyWithNewSuffix(String suffix) {
-      // NOTE: {@link GraphHandler} needs this function.
-      return new Key(keyFilepath, tempFileBase, suffix);
+    /** Returns the key as a string. */
+    String getKeyForTesting() {
+      return key;
     }
 
     /** Writes this key to a file. */
     private void write(PrintWriter writer) {
-      // TODO: Use serialization.
-      writer.println(keyFilepath);
-      writer.println(tempFileBase);
-      writer.println(suffix);
+      writer.println(key);
     }
 
     /** Reads a key form the given lines. */
     private static Key read(Iterator<String> lines) throws IOException {
       try {
-        // TODO: Use serialization.
-        String[] fields = new String[3];
-        fields[0] = lines.next();
-        fields[1] = lines.next();
-        fields[2] = lines.next();
-        return new Key(fields[0], fields[1], fields[2]);
+        return new Key(lines.next());
       } catch (NoSuchElementException e) {
         throw new IOException("Corrupted key file");
       }
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (other instanceof Key) {
+        return key.equals(((Key)other).key);
+      }
+      return false;
+    }
+
+    @Override
+    public int hashCode() {
+      return key.hashCode();
     }
   }
 
   /** Builds a Key instance with various parameters. */
   static class KeyBuilder {
 
-    private final AtomicLong sequence;
-    private final String cacheDir;
     private String cacheType = "data";
     @Nullable private HttpQuery query = null;
     private long startSecs = 0;
     private long endSecs = 0;
     private String suffix = "dat";
     private final List<String> parametersToIgnore = Lists.newArrayList();
-
-    private KeyBuilder(String cacheDir, AtomicLong sequence) {
-      this.cacheDir = cacheDir;
-      this.sequence = sequence;
-    }
 
     public KeyBuilder setCacheType(String cacheType) {
       this.cacheType = cacheType;
@@ -366,19 +325,12 @@ final class QueryResultFileCache {
 
     /** Builds a new Key instance. */
     public Key build() {
-      String base = String.format("%s-%d-%d-%08x", cacheType, startSecs,
-                                  endSecs, queryHash());
-      // sequence number is to avoid collision from multiple same in-flight
-      // queries.
-      String tempFileBase = String.format("%s-%d", base,
-                                          sequence.incrementAndGet());
-      String keyFile = String.format("%s.%s.key", base, suffix);
-      return new Key(new File(cacheDir, keyFile).getAbsolutePath(),
-                     new File(cacheDir, tempFileBase).getAbsolutePath(),
-                     suffix);
+      String key = String.format("%s-%d-%d-%08x-%s", cacheType, startSecs,
+                                  endSecs, queryHash(), suffix);
+      return new Key(key);
     }
 
-    /** Caculates a simple hash from the given query. */
+    /** Calculates a simple hash from the given query. */
     private int queryHash() {
       if (query == null) {
         return 0;
@@ -401,32 +353,129 @@ final class QueryResultFileCache {
     private final Key key;
     /** Expiration wall-clock time in milliseconds. */
     private final long expirationTimeMillis;
+    /** The file path where this entry should be stored. */
+    private final String entryFilePath;
+    /** base path of the data file and other temporary files. */
+    private final String basepath;
+    /** The path of query result file at the cache directory. */
+    private final String dataFilePath;
     /** System call utility to help unit tests. */
     private final Util util;
 
-    public Entry(final Key key, final long expirationTimeMillis, Util util) {
+    /**
+     * Creates a cache entry.
+     *
+     * @param key A key
+     * @param expirationTimeMillis Wall-clock time for the entry to expire
+     * @param cacheDir Directory to store files.
+     * @param suffix Data file suffix
+     * @param tempSequence Sequence number to avoid collision among same
+     * queries in flight.
+     * @param util System call utility for tests
+     */
+    @VisibleForTesting
+    static Entry create(final Key key, final long expirationTimeMillis,
+                        final String cacheDir, final String suffix,
+                        final long tempSequence, final Util util) {
+      String temppath = new File(cacheDir, key.key).getAbsolutePath();
+      String entryFilePath = temppath + ".entry";
+      // sequence number is to avoid collision from multiple same in-flight
+      // queries.
+      String basepath = String.format("%s-%d", temppath, tempSequence);
+      // NOTE: {@link GraphHandler} class expects the suffix should match
+      // with the file type and the file name should be basepath + "." + suffix.
+      String dataFilePath = String.format("%s.%s", basepath, suffix);
+      return new Entry(key, expirationTimeMillis, entryFilePath, basepath,
+                       dataFilePath, util);
+    }
+
+    @VisibleForTesting
+    Entry(final Key key, final long expirationTimeMillis,
+          final String entryFilePath, final String basepath,
+          final String dataFilePath, final Util util) {
       this.key = key;
       this.expirationTimeMillis = expirationTimeMillis;
+      this.entryFilePath = entryFilePath;
+      this.basepath = basepath;
+      this.dataFilePath = dataFilePath;
       this.util = util;
     }
 
-    public Key getKey() {
+    Key getKey() {
       return key;
     }
 
-    public long getExpirationTimeMillis() {
+    long getExpirationTimeMillis() {
       return expirationTimeMillis;
     }
 
-    public boolean isExpired() {
+    boolean isExpired() {
       return expirationTimeMillis < util.currentTimeMillis();
+    }
+
+    /** Returns the path of a file to store this entry. */
+    String getEntryFilePath() {
+      return entryFilePath;
+    }
+
+    /**
+     * Returns the path of query result file at the cache directory. This path
+     * is basepath + "." + suffix.
+     */
+    String getDataFilePath() {
+      return dataFilePath;
+    }
+
+    /** Returns the base path of data and files at the cache directory. */
+    String getBasepath() {
+      return basepath;
+    }
+
+    /** Writes this entry to a file. */
+    private void write() throws FileNotFoundException {
+      // TODO: Add additional information to check corruption to retrieve data.
+      PrintWriter writer = null;
+      try {
+        writer = util.newPrintWriter(entryFilePath);
+        key.write(writer);
+        write(writer);
+      } finally {
+        if (writer != null) {
+          writer.close();
+        }
+      }
     }
 
     /** Writes this entry to a file. */
     private void write(PrintWriter writer) {
       // TODO: Use serialization.
-      key.write(writer);
       writer.println(expirationTimeMillis);
+      writer.println(entryFilePath);
+      writer.println(basepath);
+      writer.println(dataFilePath);
+    }
+
+    /**
+     * Reads an entry from the given file and returns it.
+     *
+     * @param key A key
+     * @param cacheDir Directory to store files.
+     * @param util System call utility for tests
+     * @return An entry if presents. Otherwise null.
+     * @throws IOException If there is an error while reading the file.
+     */
+    @Nullable
+    private static Entry loadEntryIfPresent(final Key key,
+                                            final String cacheDir,
+                                            final Util util)
+                                                throws IOException {
+      String temppath = new File(cacheDir, key.key).getAbsolutePath();
+      String entryFilePath = temppath + ".entry";
+      if (util.newFile(entryFilePath).exists()) {
+        List<String> lines = util.readAndCloseFile(entryFilePath);
+        return Entry.read(lines.iterator(), util);
+      }
+      return null;
     }
 
     /** Reads a key form the given lines. */
@@ -436,7 +485,12 @@ final class QueryResultFileCache {
         // TODO: Use serialization.
         Key key = Key.read(lines);
         long expirationTimeMillis = Long.parseLong(lines.next());
-        return new Entry(key, expirationTimeMillis, util);
+        String[] fields = new String[3];
+        fields[0] = lines.next();
+        fields[1] = lines.next();
+        fields[2] = lines.next();
+        return new Entry(key, expirationTimeMillis, fields[0], fields[1],
+                         fields[2], util);
       } catch (NoSuchElementException e) {
         throw new IOException("Corrupted key file");
       }

@@ -24,12 +24,14 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import com.google.common.annotations.VisibleForTesting;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
@@ -40,20 +42,16 @@ import org.jboss.netty.handler.codec.http.HttpResponseStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import net.opentsdb.core.Aggregator;
-import net.opentsdb.core.Aggregators;
-import net.opentsdb.core.Const;
 import net.opentsdb.core.DataPoint;
 import net.opentsdb.core.DataPoints;
 import net.opentsdb.core.Query;
-import net.opentsdb.core.RateOptions;
 import net.opentsdb.core.TSDB;
-import net.opentsdb.core.Tags;
 import net.opentsdb.core.TSQuery;
 import net.opentsdb.graph.Plot;
 import net.opentsdb.stats.Histogram;
 import net.opentsdb.stats.StatsCollector;
-import net.opentsdb.uid.NoSuchUniqueName;
+import net.opentsdb.tsd.QueryResultFileCache.Entry;
+import net.opentsdb.tsd.QueryResultFileCache.KeyBuilder;
 import net.opentsdb.utils.DateTime;
 import net.opentsdb.utils.JSON;
 
@@ -86,10 +84,15 @@ final class GraphHandler implements HttpRpc {
   /** Executor to run Gnuplot in separate bounded thread pool. */
   private final ThreadPoolExecutor gnuplot;
 
-  /**
-   * Constructor.
-   */
-  public GraphHandler() {
+  /** Caches results of queries. */
+  private final QueryResultFileCache queryCache;
+
+  public GraphHandler(QueryResultFileCache queryCache) {
+    this(queryCache, newThreadPoolExecutor());
+  }
+
+  /** Creates thread pool to execute gnuplot. */
+  private static ThreadPoolExecutor newThreadPoolExecutor() {
     // Gnuplot is mostly CPU bound and does only a little bit of IO at the
     // beginning to read the input data and at the end to write its output.
     // We want to avoid running too many Gnuplot instances concurrently as
@@ -98,7 +101,7 @@ final class GraphHandler implements HttpRpc {
     // shell script we use to start Gnuplot).  Similarly, the queue we use
     // is sized so as to have a fixed backlog per core.
     final int ncores = Runtime.getRuntime().availableProcessors();
-    gnuplot = new ThreadPoolExecutor(
+    return new ThreadPoolExecutor(
       ncores, ncores,  // Thread pool of a fixed size.
       /* 5m = */ 300000, MILLISECONDS,        // How long to keep idle threads.
       new ArrayBlockingQueue<Runnable>(20 * ncores),  // XXX Don't hardcode?
@@ -106,6 +109,13 @@ final class GraphHandler implements HttpRpc {
     // ArrayBlockingQueue does not scale as much as LinkedBlockingQueue in terms
     // of throughput but we don't need high throughput here.  We use ABQ instead
     // of LBQ because it creates far fewer references.
+  }
+
+  @VisibleForTesting
+  GraphHandler(final QueryResultFileCache queryCache,
+               final ThreadPoolExecutor gnuplot) {
+    this.queryCache = queryCache;
+    this.gnuplot = gnuplot;
   }
 
   public void execute(final TSDB tsdb, final HttpQuery query) {
@@ -154,13 +164,14 @@ final class GraphHandler implements HttpRpc {
     Query[] tsdbqueries = buildQueries(tsdb, query);
     // NOTE: Every query entry in tsdbqueries has the same time range.
     // temp fixup to seconds from ms until the rest of TSDB supports ms
-    long startSecs = tsdbqueries[0].getStartTime() / 1000;
-    long endSecs = tsdbqueries[0].getEndTime() / 1000;
-    final long now = System.currentTimeMillis() / 1000;
-    final int max_age = computeMaxAge(query, startSecs, endSecs, now);
+    final long startSecs = TimeUnit.MILLISECONDS.toSeconds(
+        tsdbqueries[0].getStartTime());
+    final long endSecs = TimeUnit.MILLISECONDS.toSeconds(
+        tsdbqueries[0].getEndTime());
+    final CacheEntries cacheEntries = new CacheEntries(queryCache, query,
+        startSecs, endSecs);
     final boolean nocache = query.hasQueryStringParam("nocache");
-    final String basepath = getGnuplotBasePath(tsdb, query);
-    if (!nocache && isDiskCacheHit(query, endSecs, max_age, basepath)) {
+    if (!nocache && isDiskCacheHit(query, cacheEntries)) {
       return;
     }
     List<String> options;
@@ -216,12 +227,12 @@ final class GraphHandler implements HttpRpc {
     tsdbqueries = null;  // free()
 
     if (query.hasQueryStringParam("ascii")) {
-      respondAsciiQuery(query, max_age, basepath, plot);
+      respondAsciiQuery(query, cacheEntries, plot);
       return;
     }
 
     try {
-      gnuplot.execute(new RunGnuplot(query, max_age, plot, basepath,
+      gnuplot.execute(new RunGnuplot(query, queryCache, cacheEntries, plot,
                                      aggregated_tags, npoints));
     } catch (RejectedExecutionException e) {
       query.internalError(new Exception("Too many requests pending,"
@@ -229,65 +240,26 @@ final class GraphHandler implements HttpRpc {
     }
   }
 
-  /**
-   * Decides how long we're going to allow the client to cache our response.
-   * <p>
-   * Based on the query, we'll decide whether or not we want to allow the
-   * client to cache our response and for how long.
-   * @param query The query to serve.
-   * @param start_time The start time on the query (32-bit unsigned int, secs).
-   * @param end_time The end time on the query (32-bit unsigned int, seconds).
-   * @param now The current time (32-bit unsigned int, seconds).
-   * @return A positive integer, in seconds.
-   */
-  private static int computeMaxAge(final HttpQuery query,
-                                   final long start_time, final long end_time,
-                                   final long now) {
-    // If the end time is in the future (1), make the graph uncacheable.
-    // Otherwise, if the end time is far enough in the past (2) such that
-    // no TSD can still be writing to rows for that time span and it's not
-    // specified in a relative fashion (3) (e.g. "1d-ago"), make the graph
-    // cacheable for a day since it's very unlikely that any data will change
-    // for this time span.
-    // Otherwise (4), allow the client to cache the graph for ~0.1% of the
-    // time span covered by the request e.g., for 1h of data, it's OK to
-    // serve something 3s stale, for 1d of data, 84s stale.
-    if (end_time > now) {                            // (1)
-      return 0;
-    } else if (end_time < now - Const.MAX_TIMESPAN_SECS   // (2)
-               && !DateTime.isRelativeDate(
-                   query.getQueryStringParam("start"))    // (3)
-               && !DateTime.isRelativeDate(
-                   query.getQueryStringParam("end"))) {
-      return 86400;
-    } else {                                         // (4)
-      return (int) (end_time - start_time) >> 10;
-    }
-  }
-
   // Runs Gnuplot in a subprocess to generate the graph.
   private static final class RunGnuplot implements Runnable {
 
     private final HttpQuery query;
-    private final int max_age;
+    private final QueryResultFileCache queryCache;
+    private final CacheEntries cacheEntries;
     private final Plot plot;
-    private final String basepath;
     private final HashSet<String>[] aggregated_tags;
     private final int npoints;
 
     public RunGnuplot(final HttpQuery query,
-                      final int max_age,
+                      final QueryResultFileCache queryCache,
+                      final CacheEntries cacheEntries,
                       final Plot plot,
-                      final String basepath,
                       final HashSet<String>[] aggregated_tags,
                       final int npoints) {
       this.query = query;
-      this.max_age = max_age;
+      this.queryCache = queryCache;
+      this.cacheEntries = cacheEntries;
       this.plot = plot;
-      if (IS_WINDOWS)
-        this.basepath = basepath.replace("\\", "\\\\").replace("/", "\\\\");
-      else
-        this.basepath = basepath;
       this.aggregated_tags = aggregated_tags;
       this.npoints = npoints;
     }
@@ -307,6 +279,8 @@ final class GraphHandler implements HttpRpc {
     }
 
     private void execute() throws IOException {
+      // runGnuplot plots all data into a file named basepath + ".png".
+      final String basepath = cacheEntries.png.getBasepath();
       final int nplotted = runGnuplot(query, basepath, plot);
       if (query.hasQueryStringParam("json")) {
         final HashMap<String, Object> results = new HashMap<String, Object>();
@@ -321,9 +295,15 @@ final class GraphHandler implements HttpRpc {
         results.put("etags", aggregated_tags);
         results.put("timing", query.processingTimeMillis());
         query.sendReply(JSON.serializeToBytes(results));
-        writeFile(query, basepath + ".json", JSON.serializeToBytes(results));
+        writeFile(query, cacheEntries.json.getDataFilePath(),
+                  JSON.serializeToBytes(results));
+        queryCache.put(cacheEntries.json);
+        // JSON and PNG files should be cached together.
+        queryCache.put(cacheEntries.png);
       } else if (query.hasQueryStringParam("png")) {
-        query.sendFile(basepath + ".png", max_age);
+        query.sendFile(cacheEntries.png.getDataFilePath(),
+                       cacheEntries.clientCacheTtlSecs);
+        queryCache.put(cacheEntries.png);
       } else {
         query.internalError(new Exception("Should never be here!"));
       }
@@ -351,74 +331,60 @@ final class GraphHandler implements HttpRpc {
     collector.record("http.graph.requests", graphs_generated, "cache=miss");
   }
 
-  /** Returns the base path to use for the Gnuplot files. */
-  private String getGnuplotBasePath(final TSDB tsdb, final HttpQuery query) { 
-    final Map<String, List<String>> q = query.getQueryString();
-    q.remove("ignore");
-    // TODO: Fix the caching algorithm.
-    // Super cheap caching mechanism: hash the query string.
-    final HashMap<String, List<String>> qs =
-      new HashMap<String, List<String>>(q);
-    // But first remove the parameters that don't influence the output.
-    qs.remove("png");
-    qs.remove("json");
-    qs.remove("ascii");
-    return tsdb.getConfig().getString("tsd.http.cachedir") + Integer.toHexString(qs.hashCode()); 
-  }
-
   /**
    * Checks whether or not it's possible to re-serve this query from disk.
    * @param query The query to serve.
-   * @param end_time The end time on the query (32-bit unsigned int, seconds).
-   * @param max_age The maximum time (in seconds) we wanna allow clients to
-   * cache the result in case of a cache hit.
-   * @param basepath The base path used for the Gnuplot files.
+   * @param cacheEntries Cache entries for different file formats
    * @return {@code true} if this request was served from disk (in which
    * case processing can stop here), {@code false} otherwise (in which case
    * the query needs to be processed).
    */
   private boolean isDiskCacheHit(final HttpQuery query,
-                                 final long end_time,
-                                 final int max_age,
-                                 final String basepath) throws IOException {
-    final String cachepath = basepath + (query.hasQueryStringParam("ascii")
-                                         ? ".txt" : ".png");
-    final File cachedfile = new File(cachepath);
-    if (cachedfile.exists()) {
-      final long bytes = cachedfile.length();
-      if (bytes < 21) {  // Minimum possible size for a PNG: 21 bytes.
-                         // For .txt files, <21 bytes is almost impossible.
-        logWarn(query, "Cached " + cachepath + " is too small ("
-                + bytes + " bytes) to be valid.  Ignoring it.");
-        return false;
-      }
-      if (staleCacheFile(query, end_time, max_age, cachedfile)) {
-        return false;
-      }
-      if (query.hasQueryStringParam("json")) {
-        HashMap<String, Object> map = loadCachedJson(query, end_time, 
-            max_age, basepath);
-        if (map == null) {
-          map = new HashMap<String, Object>();
+                                 final CacheEntries cacheEntries)
+                                 throws IOException {
+    final Entry cachedEntry;
+    if (query.hasQueryStringParam("ascii")) {
+      cachedEntry = queryCache.getIfPresent(cacheEntries.ascii.getKey());
+    } else {
+      cachedEntry = queryCache.getIfPresent(cacheEntries.png.getKey());
+    }
+    if (cachedEntry != null) {
+      final String cachepath = cachedEntry.getDataFilePath();
+      final File cachedfile = new File(cachepath);
+      if (cachedfile.exists()) {
+        final long bytes = cachedfile.length();
+        if (bytes < 21) {  // Minimum possible size for a PNG: 21 bytes.
+                           // For .txt files, <21 bytes is almost impossible.
+          logWarn(query, "Cached " + cachepath + " is too small ("
+                  + bytes + " bytes) to be valid.  Ignoring it.");
+          return false;
         }
-        map.put("timing", query.processingTimeMillis());
-        map.put("cachehit", "disk");
-        query.sendReply(JSON.serializeToBytes(map));
-      } else if (query.hasQueryStringParam("png")
-                 || query.hasQueryStringParam("ascii")) {
-        query.sendFile(cachepath, max_age);
-      } else {
-        query.sendReply(HttpQuery.makePage("TSDB Query", "Your graph is ready",
-            "<img src=\"" + query.request().getUri() + "&amp;png\"/><br/>"
-            + "<small>(served from disk cache)</small>"));
+        if (queryCache.staleCacheFile(query, cachedEntry, cachedfile)) {
+          return false;
+        }
+        if (query.hasQueryStringParam("json")) {
+          HashMap<String, Object> map = loadCachedJson(query, cacheEntries);
+          if (map == null) {
+            map = new HashMap<String, Object>();
+          }
+          map.put("timing", query.processingTimeMillis());
+          map.put("cachehit", "disk");
+          query.sendReply(JSON.serializeToBytes(map));
+        } else if (query.hasQueryStringParam("png")
+                   || query.hasQueryStringParam("ascii")) {
+          query.sendFile(cachepath, cacheEntries.clientCacheTtlSecs);
+        } else {
+          query.sendReply(HttpQuery.makePage("TSDB Query", "Your graph is ready",
+              "<img src=\"" + query.request().getUri() + "&amp;png\"/><br/>"
+              + "<small>(served from disk cache)</small>"));
+        }
+        graphs_diskcache_hit.incrementAndGet();
+        return true;
       }
-      graphs_diskcache_hit.incrementAndGet();
-      return true;
     }
     // We didn't find an image.  Do a negative cache check.  If we've seen
     // this query before but there was no result, we at least wrote the JSON.
-    final HashMap<String, Object> map = loadCachedJson(query, end_time, 
-        max_age, basepath);
+    final HashMap<String, Object> map = loadCachedJson(query, cacheEntries);
     // If we don't have a JSON file it's a complete cache miss.  If we have
     // one, and it says 0 data points were plotted, it's a negative cache hit.
     if (map == null || !map.containsKey("plotted") || 
@@ -438,56 +404,6 @@ final class GraphHandler implements HttpRpc {
     }
     graphs_diskcache_hit.incrementAndGet();
     return true;
-  }
-
-  /**
-   * Returns whether or not the given cache file can be used or is stale.
-   * @param query The query to serve.
-   * @param end_time The end time on the query (32-bit unsigned int, seconds).
-   * @param max_age The maximum time (in seconds) we wanna allow clients to
-   * cache the result in case of a cache hit.  If the file is exactly that
-   * old, it is not considered stale.
-   * @param cachedfile The file to check for staleness.
-   */
-  private static boolean staleCacheFile(final HttpQuery query,
-                                        final long end_time,
-                                        final long max_age,
-                                        final File cachedfile) {
-    final long mtime = cachedfile.lastModified() / 1000;
-    if (mtime <= 0) {
-      return true;  // File doesn't exist, or can't be read.
-    }
-
-    final long now = System.currentTimeMillis() / 1000;
-    // How old is the cached file, in seconds?
-    final long staleness = now - mtime;
-    if (staleness < 0) {  // Can happen if the mtime is "in the future".
-      logWarn(query, "Not using file @ " + cachedfile + " with weird"
-              + " mtime in the future: " + mtime);
-      return true;  // Play it safe, pretend we can't use this file.
-    }
-
-    // Case 1: The end time is an absolute point in the past.
-    // We might be able to re-use the cached file.
-    if (0 < end_time && end_time < now) {
-      // If the file was created prior to the end time, maybe we first
-      // executed this query while the result was uncacheable.  We can
-      // tell by looking at the mtime on the file.  If the file was created
-      // before the query end time, then it contains partial results that
-      // shouldn't be served again.
-      return mtime < end_time;
-    }
-
-    // Case 2: The end time of the query is now or in the future.
-    // The cached file contains partial data and can only be re-used if it's
-    // not too old.
-    if (staleness > max_age) {
-      logInfo(query, "Cached file @ " + cachedfile.getPath() + " is "
-              + staleness + "s stale, which is more than its limit of "
-              + max_age + "s, and needs to be regenerated.");
-      return true;
-    }
-    return false;
   }
 
   /**
@@ -559,10 +475,7 @@ final class GraphHandler implements HttpRpc {
   /**
    * Attempts to read the cached {@code .json} file for this query.
    * @param query The query to serve.
-   * @param end_time The end time on the query (32-bit unsigned int, seconds).
-   * @param max_age The maximum time (in seconds) we wanna allow clients to
-   * cache the result in case of a cache hit.
-   * @param basepath The base path used for the Gnuplot files.
+   * @param cacheEntries Cache entries for different file formats
    * @return {@code null} in case no file was found, or the contents of the
    * file if it was found.
    * @throws IOException If the file cannot be loaded
@@ -571,14 +484,16 @@ final class GraphHandler implements HttpRpc {
    */
   @SuppressWarnings("unchecked")
   private HashMap<String, Object> loadCachedJson(final HttpQuery query,
-                                       final long end_time,
-                                       final long max_age,
-                                       final String basepath) 
-                                       throws JsonParseException, 
+                                       final CacheEntries cacheEntries)
+                                       throws JsonParseException,
                                        JsonMappingException, IOException {
-    final String json_path = basepath + ".json";
-    File json_cache = new File(json_path);
-    if (staleCacheFile(query, end_time, max_age, json_cache)) {
+    Entry entry = queryCache.getIfPresent(cacheEntries.json.getKey());
+    if (entry == null) {
+      // No cached json.
+      return null;
+    }
+    File json_cache = new File(entry.getDataFilePath());
+    if (queryCache.staleCacheFile(query, cacheEntries.json, json_cache)) {
       return null;
     }
     final byte[] json = readFile(query, json_cache, 4096);
@@ -771,16 +686,13 @@ final class GraphHandler implements HttpRpc {
    * When a query specifies the "ascii" query string parameter, we send the
    * data points back to the client in plain text instead of sending a PNG.
    * @param query The query we're currently serving.
-   * @param max_age The maximum time (in seconds) we wanna allow clients to
-   * cache the result in case of a cache hit.
-   * @param basepath The base path used for the Gnuplot files.
+   * @param cacheEntries Cache entries for different file formats
    * @param plot The plot object to generate Gnuplot's input files.
    */
-  private static void respondAsciiQuery(final HttpQuery query,
-                                        final int max_age,
-                                        final String basepath,
-                                        final Plot plot) {
-    final String path = basepath + ".txt";
+  private void respondAsciiQuery(final HttpQuery query,
+                                 final CacheEntries cacheEntries,
+                                 final Plot plot) {
+    final String path = cacheEntries.ascii.getDataFilePath();
     PrintWriter asciifile;
     try {
       asciifile = new PrintWriter(path);
@@ -820,7 +732,8 @@ final class GraphHandler implements HttpRpc {
       asciifile.close();
     }
     try {
-      query.sendFile(path, max_age);
+      query.sendFile(path, cacheEntries.clientCacheTtlSecs);
+      queryCache.put(cacheEntries.ascii);
     } catch (IOException e) {
       query.internalError(e);
     }
@@ -874,6 +787,46 @@ final class GraphHandler implements HttpRpc {
       + "  CLASSPATH=" + System.getProperty("java.class.path"));
   }
 
+  /** Plain Old Data structure of cache entries of different formats. */
+  private static final class CacheEntries {
+
+    /** The current wall-clock time in seconds. */
+    private final long nowSecs;
+    /** The maximum time in which results cached by a client are valid. */
+    private final int clientCacheTtlSecs;
+    /** The maximum time in which results cached by a server are valid. */
+    private final int serverCacheTtlSecs;
+    /** PNG file format cache entry. */
+    private final Entry png;
+    /** JSON file format cache entry. */
+    private final Entry json;
+    /** Text file format cache entry. */
+    private final Entry ascii;
+
+    CacheEntries(final QueryResultFileCache queryCache, final HttpQuery query,
+              final long startSecs, final long endSecs) {
+      KeyBuilder builder = queryCache.newKeyBuilder()
+          .setCacheType("graph")
+          .setQuery(query)
+          .setStartTime(startSecs)
+          .setEndTime(endSecs)
+          .addQueryParameterToIgnore("ignore")
+          .addQueryParameterToIgnore("png")
+          .addQueryParameterToIgnore("json")
+          .addQueryParameterToIgnore("ascii");
+      nowSecs = System.currentTimeMillis() / 1000;
+      clientCacheTtlSecs = QueryResultFileCache.clientCacheTtl(
+          query, startSecs, endSecs, nowSecs);
+      serverCacheTtlSecs = QueryResultFileCache.serverCacheTtl(
+          query, startSecs, endSecs, nowSecs);
+      png = queryCache.createEntry(builder.setSuffix("png").build(), "png",
+                                   serverCacheTtlSecs);
+      json = queryCache.createEntry(builder.setSuffix("json").build(), "json",
+                                    serverCacheTtlSecs);
+      ascii = queryCache.createEntry(builder.setSuffix("txt").build(), "txt",
+                                     serverCacheTtlSecs);
+    }
+  }
 
   // ---------------- //
   // Logging helpers. //

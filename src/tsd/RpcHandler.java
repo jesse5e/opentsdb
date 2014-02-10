@@ -144,13 +144,14 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
       http_light_commands.put("api/aggregators", aggregators);
     }
     http_light_commands.put("logs", new LogsRpc());
-    http_expensive_commands.put("q", new GraphHandler());
+    // queryCache is shared by GraphHandler and QueryRpc.
+    QueryResultFileCache queryCache = new QueryResultFileCache(tsdb);
+    http_expensive_commands.put("q", new GraphHandler(queryCache));
     {
       final SuggestRpc suggest_rpc = new SuggestRpc();
       http_expensive_commands.put("suggest", suggest_rpc);
       http_expensive_commands.put("api/suggest", suggest_rpc);
     }
-    QueryResultFileCache queryCache = new QueryResultFileCache(tsdb);
     http_expensive_commands.put("api/serializers", new Serializers());
     http_expensive_commands.put("api/uid", new UniqueIdRpc());
     http_expensive_commands.put("api/query", new QueryRpc(queryCache));
