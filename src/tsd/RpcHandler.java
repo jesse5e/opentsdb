@@ -69,6 +69,9 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
   /** The TSDB to use. */
   private final TSDB tsdb;
 
+  /** Restarts OpenTSDB server. */
+  private final Restarter restarter;
+
   /**
    * Constructor that loads the CORS domain list and configures the route maps 
    * for telnet and HTTP requests
@@ -101,9 +104,15 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
     http_light_commands = new HashMap<String, HttpRpc>(11);
     http_expensive_commands = new HashMap<String, HttpRpc>(11);
     {
-      final DieDieDie diediedie = new DieDieDie();
+      final DieDieDie diediedie = new DieDieDie(
+          tsdb.getConfig().enable_diediedie_endpoint());
       telnet_commands.put("diediedie", diediedie);
       http_light_commands.put("diediedie", diediedie);
+    }
+    {
+      restarter = new Restarter(tsdb.getConfig());
+      telnet_commands.put("restartrestartrestart", restarter);
+      http_light_commands.put("restartrestartrestart", restarter);
     }
     {
       final StaticFileRpc staticfile = new StaticFileRpc();
@@ -184,6 +193,7 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
                + " while serving " + pretty_message, e);
       exceptions_caught.incrementAndGet();
     }
+    restarter.restartIfUnstable();
   }
 
   /**
@@ -306,18 +316,39 @@ final class RpcHandler extends SimpleChannelUpstreamHandler {
 
   /** The "diediedie" command and "/diediedie" endpoint. */
   private final class DieDieDie implements TelnetRpc, HttpRpc {
+
+    /** True to enable the diediedie endpoint. */
+    private final boolean enabled;
+
+    public DieDieDie(boolean enabled) {
+      this.enabled = enabled;
+    }
+
     public Deferred<Object> execute(final TSDB tsdb, final Channel chan,
                                     final String[] cmd) {
-      logWarn(chan, "shutdown requested");
-      chan.write("Cleaning up and exiting now.\n");
-      return doShutdown(tsdb, chan);
+      if (enabled) {
+        logWarn(chan, "shutdown requested");
+        chan.write("Cleaning up and exiting now.\n");
+        return doShutdown(tsdb, chan);
+      } else {
+        logWarn(chan, "shutdown requested but disabled");
+        chan.write("shutdown by telnet is disabled.\n");
+        return new Deferred<Object>();
+      }
     }
 
     public void execute(final TSDB tsdb, final HttpQuery query) {
-      logWarn(query, "shutdown requested");
-      query.sendReply(HttpQuery.makePage("TSD Exiting", "You killed me",
-                                         "Cleaning up and exiting now."));
-      doShutdown(tsdb, query.channel());
+      if (enabled) {
+        logWarn(query, "shutdown requested");
+        query.sendReply(HttpQuery.makePage("TSD Exiting", "You killed me",
+                                           "Cleaning up and exiting now."));
+        doShutdown(tsdb, query.channel());
+      } else {
+        logWarn(query, "shutdown requested but disabled");
+        query.sendReply(HttpQuery.makePage("TSD Not Exiting",
+                                           "shutdown disabled",
+                                           "shutdown by http is disabled."));
+      }
     }
 
     private Deferred<Object> doShutdown(final TSDB tsdb, final Channel chan) {

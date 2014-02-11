@@ -88,25 +88,21 @@ public class BadTimeout {
    */
   private static <T> T minutes(Deferred<T> deferred, final int timeoutMins)
       throws Exception {
-    try {
-      for (int count = 0; count < timeoutMins; ++count) {
-        try {
-          return deferred.joinUninterruptibly(ONE_MINUTE_MILLIS);
-        } catch (TimeoutException unused) {
-          // Checks if the systems is stable every minute, and gives up if
-          // it is unstable even before the given timeout.
-          if (isSystemUnstable()) {
-            throw new BadTimeoutException(deferred, count * ONE_MINUTE_MILLIS);
-          }
+    for (int count = 0; count < timeoutMins; ++count) {
+      try {
+        return deferred.joinUninterruptibly(ONE_MINUTE_MILLIS);
+      } catch (TimeoutException unused) {
+        // Checks if the systems is stable every minute, and gives up if
+        // it is unstable even before the given timeout.
+        if (isSystemUnstable()) {
+          throw new BadTimeoutException(deferred, count * ONE_MINUTE_MILLIS);
         }
       }
-      // Timeout could happen only if the system is unstable.
-      systemUnstable.set(true);
-      logStackTraces();
-      throw new BadTimeoutException(deferred, timeoutMins * ONE_MINUTE_MILLIS);
-    } catch (Exception e) {
-      throw e;
     }
+    // Timeout could happen only if the system is unstable.
+    systemUnstable.set(true);
+    logStackTraces();
+    throw new BadTimeoutException(deferred, timeoutMins * ONE_MINUTE_MILLIS);
   }
 
   /** Logs stack traces of all threads. */

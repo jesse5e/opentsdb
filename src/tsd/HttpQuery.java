@@ -50,6 +50,7 @@ import org.jboss.netty.handler.codec.http.HttpVersion;
 import org.jboss.netty.handler.codec.http.QueryStringDecoder;
 import org.jboss.netty.util.CharsetUtil;
 
+import net.opentsdb.core.BadTimeout;
 import net.opentsdb.core.Const;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.graph.Plot;
@@ -562,15 +563,18 @@ final class HttpQuery {
    */
   public void internalError(final Exception cause) {
     logError("Internal Server Error on " + request.getUri(), cause);
-    
+
+    final HttpResponseStatus responseStatus = BadTimeout.isSystemUnstable() ?
+        HttpResponseStatus.SERVICE_UNAVAILABLE:
+        HttpResponseStatus.INTERNAL_SERVER_ERROR;
     if (this.api_version > 0) {
       // always default to the latest version of the error formatter since we
       // need to return something
       switch (this.api_version) {
         case 1:
         default:
-          sendReply(HttpResponseStatus.INTERNAL_SERVER_ERROR, 
-              serializer.formatErrorV1(cause));
+          sendReply(responseStatus,
+              serializer.formatErrorV1(cause, responseStatus));
       }
       return;
     }
@@ -585,11 +589,11 @@ final class HttpQuery {
       buf.append("{\"err\":\"");
       HttpQuery.escapeJson(pretty_exc, buf);
       buf.append("\"}");
-      sendReply(HttpResponseStatus.INTERNAL_SERVER_ERROR, buf);
+      sendReply(responseStatus, buf);
     } else if (hasQueryStringParam("png")) {
-      sendAsPNG(HttpResponseStatus.INTERNAL_SERVER_ERROR, pretty_exc, 30);
+      sendAsPNG(responseStatus, pretty_exc, 30);
     } else {
-      sendReply(HttpResponseStatus.INTERNAL_SERVER_ERROR,
+      sendReply(responseStatus,
                 makePage("Internal Server Error", "Houston, we have a problem",
                          "<blockquote>"
                          + "<h1>Internal Server Error</h1>"

@@ -204,4 +204,22 @@ public final class TestConfig {
     config.overrideConfig("tsd.unitest", "blarg");
     assertFalse(config.getBoolean("tsd.unitest"));
   }
+
+  @Test
+  public void enableRestartWhenUnstable_default() {
+    assertEquals("/usr/share/opentsdb/opentsdb_restart.py",
+        config.getString("tsd.tsd.restart_script"));
+    assertEquals("/usr/share/opentsdb/opentsdb_restart.py",
+        config.get_restart_script());
+    assertFalse(config.enable_restart_endpoint());
+  }
+
+  @Test
+  public void enableRestartWhenUnstable_enable() {
+    config.overrideConfig("tsd.tsd.enable_restart_endpoint", "true");
+    config.overrideConfig("tsd.tsd.restart_script", "foo_script");
+    config.setDefaults();
+    assertEquals("foo_script", config.get_restart_script());
+    assertTrue(config.enable_restart_endpoint());
+  }
 }

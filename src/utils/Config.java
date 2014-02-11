@@ -52,6 +52,9 @@ import com.google.common.collect.ImmutableMap;
 public class Config {
   private static final Logger LOG = LoggerFactory.getLogger(Config.class);
 
+  private static final String DEFAULT_RESTART_SCRIPT =
+      "/usr/share/opentsdb/opentsdb_restart.py";
+
   // These are accessed often so need a set address for fast access (faster
   // than accessing the map. Their value will be changed when the config is 
   // loaded
@@ -86,6 +89,15 @@ public class Config {
 
   /** tsd.core.preload_uid_cache */
   private boolean preload_uid_cache = true;
+
+  /** tsd.tsd.restart_script */
+  private String restart_script = DEFAULT_RESTART_SCRIPT;
+
+  /** tsd.tsd.enable_restart_endpoint */
+  private boolean enable_restart_endpoint = false;
+
+  /** tsd.tsd.enable_diediedie_endpoint */
+  private boolean enable_diediedie_endpoint = false;
 
   /**
    * The list of properties configured to their defaults or modified by users
@@ -193,6 +205,21 @@ public class Config {
   /** @return whether or not to preload the uid cache */
   public boolean enable_preload_uid_cache() {
     return preload_uid_cache;
+  }
+
+  /** @return A path to the script to restart server. */
+  public String get_restart_script() {
+    return restart_script;
+  }
+
+  /** @return whether or not to enable the restart endpoint. */
+  public boolean enable_restart_endpoint() {
+    return enable_restart_endpoint;
+  }
+
+  /** @return whether or not to enable the diediedie endpoint. */
+  public boolean enable_diediedie_endpoint() {
+    return enable_diediedie_endpoint;
   }
 
   /**
@@ -382,6 +409,9 @@ public class Config {
     default_map.put("tsd.http.request.enable_chunked", "false");
     default_map.put("tsd.http.request.max_chunk", "4096");
     default_map.put("tsd.http.request.cors_domains", "");
+    default_map.put("tsd.tsd.restart_script", DEFAULT_RESTART_SCRIPT);
+    default_map.put("tsd.tsd.enable_restart_endpoint", "false");
+    default_map.put("tsd.tsd.enable_diediedie_endpoint", "false");
 
     for (Map.Entry<String, String> entry : default_map.entrySet()) {
       if (!properties.containsKey(entry.getKey()))
@@ -403,6 +433,11 @@ public class Config {
     }
     enable_tree_processing = this.getBoolean("tsd.core.tree.enable_processing");
     preload_uid_cache = this.getBoolean("tsd.core.preload_uid_cache");
+    restart_script = this.getString("tsd.tsd.restart_script");
+    enable_restart_endpoint = this.getBoolean(
+        "tsd.tsd.enable_restart_endpoint");
+    enable_diediedie_endpoint = this.getBoolean(
+        "tsd.tsd.enable_diediedie_endpoint");
   }
 
   /**

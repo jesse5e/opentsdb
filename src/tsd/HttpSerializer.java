@@ -668,6 +668,20 @@ public abstract class HttpSerializer {
    * @return A standard JSON error
    */
   public ChannelBuffer formatErrorV1(final Exception exception) {
+    return formatErrorV1(exception, HttpResponseStatus.INTERNAL_SERVER_ERROR);
+  }
+
+  /**
+   * Format an internal error exception with the given response status.
+   * <p>
+   * <b>WARNING:</b> If overriding, make sure this method catches all errors and
+   * returns a byte array with a simple string error at the minimum
+   * @param exception The system exception to format
+   * @param status The response status to display.
+   * @return A standard JSON error
+   */
+  ChannelBuffer formatErrorV1(final Exception exception,
+                              HttpResponseStatus status) {
     String message = exception.getMessage();
     // NPEs have a null for the message string (why?!?!?!)
     if (exception.getClass() == NullPointerException.class) {
@@ -682,7 +696,7 @@ public abstract class HttpSerializer {
       output.append(query.getQueryStringParam("jsonp") + "(");
     }
     output.append("{\"error\":{\"code\":");
-    output.append(500);
+    output.append(status.getCode());
     final StringBuilder msg = new StringBuilder(message.length());
     HttpQuery.escapeJson(message, msg);
     output.append(",\"message\":\"").append(msg.toString()).append("\"");

@@ -99,6 +99,7 @@ tsdb_SRC := \
 	src/tsd/PutDataPointRpc.java	\
 	src/tsd/QueryResultFileCache.java	\
 	src/tsd/QueryRpc.java	\
+	src/tsd/Restarter.java	\
 	src/tsd/RpcHandler.java	\
 	src/tsd/RpcPlugin.java	\
 	src/tsd/RTPublisher.java	\
@@ -181,6 +182,7 @@ test_SRC := \
 	test/tsd/TestPutRpc.java	\
 	test/tsd/TestQueryResultFileCache.java	\
 	test/tsd/TestQueryRpc.java	\
+	test/tsd/TestRestarter.java	\
 	test/tsd/TestRpcHandler.java	\
 	test/tsd/TestRpcPlugin.java	\
 	test/tsd/TestRTPublisher.java	\
