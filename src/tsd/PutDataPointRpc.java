@@ -16,14 +16,19 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.handler.codec.http.HttpMethod;
 import org.jboss.netty.handler.codec.http.HttpResponseStatus;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,6 +46,101 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
   private static final AtomicLong invalid_values = new AtomicLong();
   private static final AtomicLong illegal_arguments = new AtomicLong();
   private static final AtomicLong unknown_metrics = new AtomicLong();
+  private static final AtomicLong batch_timeouts = new AtomicLong();
+
+  /** timers to watch the requests */
+  private final static ScheduledExecutorService scheduler =
+      Executors.newScheduledThreadPool(2);
+
+  /** Implements a callback sink to count completion of storage calls */
+  final class RequestCompletion implements Callback<Object, Object> {
+    private final long total;
+    private long success = 0;
+    private long errors = 0;
+    private final boolean show_summary;
+    private final ArrayList<HashMap<String, Object>> details;
+    private final HttpQuery query;
+    private final AtomicBoolean request_complete;
+    private ScheduledFuture<?> taskhandle;
+
+    RequestCompletion(int timeoutSeconds, long total, final boolean show_summary,
+                      final ArrayList<HashMap<String, Object>> details,
+                      AtomicBoolean request_complete,
+                      final HttpQuery query) {
+
+      this.total = total;
+      this.query = query;
+      this.show_summary = show_summary;
+      this.details = details;
+      this.request_complete = request_complete;
+
+      if (timeoutSeconds > 0) {
+        Runnable task  = new Runnable() {
+            public void run() {
+              timeout();
+            }
+        };
+        taskhandle  = scheduler.schedule(task, timeoutSeconds, TimeUnit.SECONDS);
+      } else  {
+        // 0 or less - timeout directly
+        timeout();
+      }
+    }
+
+    public synchronized Object call(Object result) throws Exception {
+      if (result == null) {
+        errors++;
+      } else {
+        success++;
+      }
+      if (success + errors >= total) {
+        // all items called back, complete the request
+        if (taskhandle != null) {
+          taskhandle.cancel(false);
+        }
+        execute_complete(query, success, errors, total, show_summary, details, request_complete);
+      }
+      return result;
+    }
+
+    private synchronized void timeout() {
+      try {
+        // not all items called back in time - complete it now as timeout.
+        batch_timeouts.incrementAndGet();
+        execute_complete(query, success, errors, total, show_summary, details, request_complete);
+      }
+      catch (Exception e) {
+        LOG.error("Unexpected exception in timeout", e);
+      }
+    }
+  }
+
+  /** Implements a dummy callback sink to count completion of hbase rpc calls */
+  final class DummyRequestCompletion implements Callback<Object, Object> {
+
+    public Object call(Object result) throws Exception {
+      return result;
+    }
+  }
+
+  /** parse query args for waitflush argument */
+  private int parse_waitflush(final HttpQuery query)
+      throws IOException {
+    int waitflush = -1;
+    String waitflusharg = query.getQueryStringParam("waitflush");
+    if (waitflusharg != null && !waitflusharg.isEmpty()) {
+      try {
+        waitflush = Integer.parseInt(waitflusharg);
+      } catch (NumberFormatException unused) {
+        throw new BadRequestException("Unable to parse 'waitflush' as a number");
+      }
+      if (waitflush < 0 || waitflush > 3600) {
+        throw new BadRequestException("waitflush out of range");
+      }
+    }
+    return waitflush;
+  }
+
 
   public Deferred<Object> execute(final TSDB tsdb, final Channel chan,
                                   final String[] cmd) {
@@ -95,21 +195,26 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
           "Method not allowed", "The HTTP method [" + query.method().getName() +
           "] is not permitted for this endpoint");
     }
-    
+
+    long success = 0;
     final List<IncomingDataPoint> dps = query.serializer().parsePutV1();
-    if (dps.size() < 1) {
+    final long total = dps.size();
+    if (total < 1) {
       throw new BadRequestException("No datapoints found in content");
     }
-    
+
+    final AtomicBoolean request_complete = new AtomicBoolean();
+    final int waitflush = parse_waitflush(query);
     final boolean show_details = query.hasQueryStringParam("details");
     final boolean show_summary = query.hasQueryStringParam("summary");
-    final ArrayList<HashMap<String, Object>> details = show_details
-      ? new ArrayList<HashMap<String, Object>>() : null;
-    long success = 0;
-    long total = 0;
-    
+    final ArrayList<HashMap<String, Object>> details =
+        show_details ? new ArrayList<HashMap<String, Object>>() : null;
+
+    Callback<Object, Object> request_callback = (waitflush < 0) ?
+        new DummyRequestCompletion() :
+        new RequestCompletion(waitflush, total,  show_summary, details, request_complete, query);
+
     for (IncomingDataPoint dp : dps) {
-      total++;
       try {
         if (dp.getMetric() == null || dp.getMetric().isEmpty()) {
           if (show_details) {
@@ -139,18 +244,18 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
           LOG.warn("Missing tags: " + dp);
           continue;
         }
+
         if (Tags.looksLikeInteger(dp.getValue())) {
-          tsdb.addPoint(dp.getMetric(), dp.getTimestamp(), 
-              Tags.parseLong(dp.getValue()), dp.getTags());
+          tsdb.addPoint(dp.getMetric(), dp.getTimestamp(),
+              Tags.parseLong(dp.getValue()), dp.getTags()).addCallback(request_callback);
         } else {
-          tsdb.addPoint(dp.getMetric(), dp.getTimestamp(), 
-              Float.parseFloat(dp.getValue()), dp.getTags());
+          tsdb.addPoint(dp.getMetric(), dp.getTimestamp(),
+              Float.parseFloat(dp.getValue()), dp.getTags()).addCallback(request_callback);
         }
         success++;
       } catch (NumberFormatException x) {
         if (show_details) {
-          details.add(this.getHttpDetails("Unable to parse value to a number", 
-              dp));
+          details.add(this.getHttpDetails("Unable to parse value to a number", dp));
         }
         LOG.warn("Unable to parse value to a number: " + dp);
         invalid_values.incrementAndGet();
@@ -168,33 +273,77 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
         unknown_metrics.incrementAndGet();
       }
     }
-    
+
     final long failures = total - success;
-    if (!show_summary && !show_details) {
-      if (failures > 0) {
-        throw new BadRequestException(HttpResponseStatus.BAD_REQUEST,
-            "One or more data points had errors", 
-            "Please see the TSD logs or append \"details\" to the put request");
-      } else {
+    if (waitflush < 0 || failures > 0) {
+      // if there was a failure or if we don't wait for all items
+      // to be written to storage return inline. Else we complete
+      // the request in the RequestCompletion class
+      execute_complete(query, success, failures, total, show_summary, details, request_complete);
+    }
+  }
+
+  /**
+   * Completes the HTTP RPC put requests b sending the response
+   * @param query The HTTP query from the user
+   * @throws IOException if there is an error parsing the query or formatting
+   * the output
+   * @throws BadRequestException if the user supplied bad data
+   * @param success Successful written to hbase
+   * @param failures items that encountered some error
+   * @param total all items in the orignal request (might be > success+failures)
+   * @param show_summary if true, send a short summary of errors/success the batch
+   * @param details includes a list of detailed errors to be sent in the response
+   * @since 2.0
+   */
+  void execute_complete(final HttpQuery query, final long success, final long failures, final long total,
+                        final boolean show_summary, final ArrayList<HashMap<String, Object>> details,
+                        AtomicBoolean request_complete)
+                        throws IOException {
+
+    if (request_complete.getAndSet(true)) {
+      // this request has already been completed, do nothing.
+      // Because this CAS is atomic, we can make it past this barrier only once
+      // which prevents multiple writes to the HttpQuery
+      return;
+    }
+
+    HttpResponseStatus httpcode = HttpResponseStatus.OK;
+    if (failures > 0) {
+      httpcode = HttpResponseStatus.BAD_REQUEST;
+    }
+    else if (success < total) {
+      httpcode = HttpResponseStatus.REQUEST_TIMEOUT;
+    }
+
+    if (!show_summary && details == null) {
+      // empty response if no summary or details are requested
+      if (httpcode !=  HttpResponseStatus.OK) {
+        if (httpcode == HttpResponseStatus.REQUEST_TIMEOUT) {
+          query.sendStatusOnly(HttpResponseStatus.REQUEST_TIMEOUT);
+        }
+        else {
+          // for errors attach exception
+          query.badRequest(
+              "One or more data points had errors. " +
+              "Please see the TSD logs or append \"details\" to the put request");
+        }
+      }
+      else {
         query.sendReply(HttpResponseStatus.NO_CONTENT, "".getBytes());
       }
     } else {
       final HashMap<String, Object> summary = new HashMap<String, Object>();
+      summary.put("total", total);
       summary.put("success", success);
       summary.put("failed", failures);
-      if (show_details) {
+      if (details != null) {
         summary.put("errors", details);
       }
-      
-      if (failures > 0) {
-        query.sendReply(HttpResponseStatus.BAD_REQUEST, 
-            query.serializer().formatPutV1(summary));
-      } else {
-        query.sendReply(query.serializer().formatPutV1(summary));
-      }
+      query.sendReply(httpcode, query.serializer().formatPutV1(summary));
     }
   }
-  
+
   /**
    * Collects the stats and metrics tracked by this instance.
    * @param collector The collector to use.
@@ -205,6 +354,7 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
     collector.record("rpc.errors", invalid_values, "type=invalid_values");
     collector.record("rpc.errors", illegal_arguments, "type=illegal_arguments");
     collector.record("rpc.errors", unknown_metrics, "type=unknown_metrics");
+    collector.record("rpc.errors", batch_timeouts, "type=batch_timeouts");
   }
 
   /**
