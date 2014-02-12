@@ -170,8 +170,8 @@ final class GraphHandler implements HttpRpc {
         tsdbqueries[0].getEndTime());
     final CacheEntries cacheEntries = new CacheEntries(queryCache, query,
         startSecs, endSecs);
-    final boolean nocache = query.hasQueryStringParam("nocache");
-    if (!nocache && isDiskCacheHit(query, cacheEntries)) {
+    final boolean shouldUseCache = QueryResultFileCache.shouldUseCache(query);
+    if (shouldUseCache && isDiskCacheHit(query, cacheEntries)) {
       return;
     }
     List<String> options;
@@ -810,7 +810,6 @@ final class GraphHandler implements HttpRpc {
           .setQuery(query)
           .setStartTime(startSecs)
           .setEndTime(endSecs)
-          .addQueryParameterToIgnore("ignore")
           .addQueryParameterToIgnore("png")
           .addQueryParameterToIgnore("json")
           .addQueryParameterToIgnore("ascii");

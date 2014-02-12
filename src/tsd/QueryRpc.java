@@ -158,8 +158,9 @@ final class QueryRpc implements HttpRpc {
         .setStartTime(startSecs)
         .setEndTime(endSecs)
         .setSuffix("results")
+        .addQueryParameterToIgnore(QueryResultFileCache.NO_CACHE)
         .build();
-    if (!query.hasQueryStringParam("nocache")) {
+    if (QueryResultFileCache.shouldUseCache(query)) {
       // Serves from the cache.
       if (replyFromCache(query, cacheKey, clientCacheTtlSecs)) {
         cacheHits.incrementAndGet();
@@ -210,10 +211,15 @@ final class QueryRpc implements HttpRpc {
     case 1:
       int serverCacheTtlSecs = QueryResultFileCache.serverCacheTtl(
           query, startSecs, endSecs, nowSecs);
-      Entry cacheEntry = queryCache.createEntry(cacheKey, "results",
-                                                serverCacheTtlSecs);
-      replyFromResults(query, data_query, results, globals, cacheEntry,
-                       clientCacheTtlSecs);
+      ChannelBuffer buffer = query.serializer().formatQueryV1(
+          data_query, results, globals);
+      if (QueryResultFileCache.shouldUpdateCache(query)) {
+        Entry cacheEntry = queryCache.createEntry(cacheKey, "results",
+                                                  serverCacheTtlSecs);
+        replyFromResults(query, buffer, cacheEntry, clientCacheTtlSecs);
+      } else {
+        query.sendReply(buffer);
+      }
       cacheMisses.incrementAndGet();
       missLatencyMillis.add(elapsedTimeMillis(nowMillis));
       break;
@@ -228,29 +234,23 @@ final class QueryRpc implements HttpRpc {
    * Sends reply from the output of a query execution.
    *
    * @param query The current HTTP query
-   * @param tsQuery TSQuery after parsing the HTTP query
-   * @param results Output data points array of the query
-   * @param globals Global annotations
+   * @param results Output to be sent
    * @param cacheEntry Cache entry to be used to cache results
    * @param clientCacheTtlSecs The cache TTL to send down to the client
    * @throws IOException If there is any IO error
    */
   private void replyFromResults(final HttpQuery query,
-                                final TSQuery tsQuery,
-                                final List<DataPoints[]> results,
-                                final List<Annotation> globals,
+                                final ChannelBuffer results,
                                 final Entry cacheEntry,
                                 final int clientCacheTtlSecs)
                                     throws IOException {
-    ChannelBuffer buffer = query.serializer().formatQueryV1(tsQuery, results,
-                                                            globals);
     OutputStream out = null;
     try {
       // TODO: Reply before we save results to a file.
       out = new FileOutputStream(cacheEntry.getDataFilePath());
-      while (buffer.readable()) {
-        byte[] byteBuffer = new byte[buffer.readableBytes()];
-        buffer.readBytes(byteBuffer);
+      while (results.readable()) {
+        byte[] byteBuffer = new byte[results.readableBytes()];
+        results.readBytes(byteBuffer);
         out.write(byteBuffer);
       }
     } finally {

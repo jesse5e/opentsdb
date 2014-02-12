@@ -57,6 +57,9 @@ final class QueryResultFileCache {
   private static final Logger LOG =
     LoggerFactory.getLogger(QueryResultFileCache.class);
 
+  static final String NO_CACHE = "nocache";
+  private static final String REFRESH_CACHE = "refreshcache";
+
   private static final int ONE_DAY_IN_SECONDS = 86400;
   private static final int ONE_WEEK_IN_SECONDS = 86400 * 7;
   private static final int HUNDRED_DAYS_IN_SECONDS = 86400 * 100;
@@ -233,6 +236,19 @@ final class QueryResultFileCache {
     }
   }
 
+  /** @return true if cached query result should be used. */
+  static boolean shouldUseCache(HttpQuery query) {
+    // NOT (NO_CACHE or REFRESH_CACHE).
+    return !(query.hasQueryStringParam(NO_CACHE) ||
+        query.hasQueryStringParam(REFRESH_CACHE));
+  }
+
+  /** @return true if query result cache should be updated. */
+  static boolean shouldUpdateCache(HttpQuery query) {
+    // Updates cached query results unless the query has NO_CACHE.
+    return !query.hasQueryStringParam(NO_CACHE);
+  }
+
   /** Key for query results. */
   static class Key {
 
@@ -279,6 +295,10 @@ final class QueryResultFileCache {
 
   /** Builds a Key instance with various parameters. */
   static class KeyBuilder {
+
+    private static final String[] DEFAULT_PARAMS_TO_IGNORE = new String[] {
+      "ignore", "traceid", REFRESH_CACHE
+    };
 
     private String cacheType = "data";
     @Nullable private HttpQuery query = null;
@@ -340,6 +360,9 @@ final class QueryResultFileCache {
       final HashMap<String, List<String>> qs =
         new HashMap<String, List<String>>(q);
       for (String param: parametersToIgnore) {
+        qs.remove(param);
+      }
+      for (String param: DEFAULT_PARAMS_TO_IGNORE) {
         qs.remove(param);
       }
       return qs.hashCode();
