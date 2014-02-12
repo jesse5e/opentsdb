@@ -933,6 +933,7 @@ final class HttpQuery {
       this.sendReply(HttpResponseStatus.NOT_FOUND, serializer.formatNotFoundV1());
       return;
     }
+    response.setStatus(status);
     final long length = file.length();
     {
       final String mimetype = guessMimeTypeFromUri(path);
@@ -997,9 +998,10 @@ final class HttpQuery {
           serializer.responseContentType()));
     
     // TODO(tsuna): Server, X-Backend, etc. headers.
-    // only reset the status if we have the default status, otherwise the user 
-    // already set it
-    if (response.getStatus() == HttpResponseStatus.ACCEPTED) {
+    // Resets the status either if we have the default status or if a user
+    // wants to change the status from OK to something else.
+    if (response.getStatus() == HttpResponseStatus.ACCEPTED ||
+        response.getStatus() == HttpResponseStatus.OK) {
       response.setStatus(status);
     }
     response.setContent(buf);
