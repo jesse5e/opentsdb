@@ -118,7 +118,7 @@ public final class Internal {
   public static KeyValue complexCompact(final KeyValue kv) {
     final ArrayList<KeyValue> kvs = new ArrayList<KeyValue>(1);
     kvs.add(kv);
-    return CompactionQueue.complexCompact(kvs, kv.qualifier().length / 2, false);
+    return CompactionQueue.complexCompact(kvs, kv.qualifier().length / 2);
   }
   
   /**

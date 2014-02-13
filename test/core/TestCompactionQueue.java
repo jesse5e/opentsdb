@@ -61,6 +61,7 @@ final class TestCompactionQueue {
   private static final byte[] KEY = { 0, 0, 1, 78, 36, -84, 42, 0, 0, 1, 0, 0, 2 };
   private static final byte[] FAMILY = { 't' };
   private static final byte[] ZERO = { 0 };
+  private static final byte[] ONE = { Const.MS_MIXED_COMPACT };
   private CompactionQueue compactionq;
 
   @Before
@@ -226,12 +227,12 @@ final class TestCompactionQueue {
 
     // We had one row to compact, so one put to do.
     verify(tsdb, times(1)).put(KEY, MockBase.concatByteArrays(qual1, qual3, qual2),
-         MockBase.concatByteArrays(val1, val3, val2, new byte[] { 1 }));
+         MockBase.concatByteArrays(val1, val3, val2, ONE));
     // And we had to delete individual cells.
     verify(tsdb, times(1)).delete(KEY, new byte[][] { qual1, qual3, qual2 });
   }
   
-  @Test (expected=IllegalDataException.class)
+  @Test
   public void secondsOutOfOrder() throws Exception {
     // this will trigger a trivial compaction that will check for oo issues
     ArrayList<KeyValue> kvs = new ArrayList<KeyValue>(2);
@@ -247,9 +248,14 @@ final class TestCompactionQueue {
     kvs.add(makekv(qual3, val3));
 
     compactionq.compact(kvs, annotations);
+    // We had one compacted row to put.
+    verify(tsdb, times(1)).put(KEY, MockBase.concatByteArrays(qual2, qual3, qual1),
+         MockBase.concatByteArrays(val2, val3, val1, ZERO));
+    // And we had to delete individual cells.
+    verify(tsdb, times(1)).delete(KEY, new byte[][] { qual2, qual3, qual1 });
   }
   
-  @Test (expected=IllegalDataException.class)
+  @Test
   public void msOutOfOrder() throws Exception {
     // all rows with an ms qualifier will go through the complex compaction 
     // process and they'll be sorted
@@ -271,7 +277,7 @@ final class TestCompactionQueue {
     verify(tsdb, times(1)).put(KEY, MockBase.concatByteArrays(qual2, qual3, qual1),
                                MockBase.concatByteArrays(val2, val3, val1, ZERO));
     // And we had to delete individual cells.
-    verify(tsdb, times(1)).delete(KEY, new byte[][] { qual1, qual2, qual3 });
+    verify(tsdb, times(1)).delete(KEY, new byte[][] { qual2, qual3, qual1 });
   }
   
   @Test
@@ -289,12 +295,12 @@ final class TestCompactionQueue {
 
     // We had one row to compact, so one put to do.
     verify(tsdb, times(1)).put(KEY, MockBase.concatByteArrays(qual1, qual2),
-         MockBase.concatByteArrays(val1, val2, new byte[] { 1 }));
+         MockBase.concatByteArrays(val1, val2, ONE));
     // And we had to delete individual cells.
     verify(tsdb, times(1)).delete(KEY, new byte[][] { qual1, qual2 });
   }
 
-  @Test (expected=IllegalDataException.class)
+  @Test
   public void msSameAsSecond() throws Exception {
     ArrayList<KeyValue> kvs = new ArrayList<KeyValue>(2);
     ArrayList<Annotation> annotations = new ArrayList<Annotation>(0);
@@ -306,6 +312,11 @@ final class TestCompactionQueue {
     kvs.add(makekv(qual2, val2));
 
     compactionq.compact(kvs, annotations);
+    // Compacted with only the first cell.
+    verify(tsdb, times(1)).put(KEY, MockBase.concatByteArrays(qual1),
+         MockBase.concatByteArrays(val1, ZERO));
+    // And we had to delete individual cells.
+    verify(tsdb, times(1)).delete(KEY, new byte[][] { qual1, qual2 });
   }
   
   @Test
@@ -356,7 +367,7 @@ final class TestCompactionQueue {
     verify(tsdb, times(1)).delete(KEY, new byte[][] { qual1, qual2, });
   }
 
-  @Test(expected=IllegalDataException.class)
+  @Test
   public void overlappingDataPoints() throws Exception {
     ArrayList<KeyValue> kvs = new ArrayList<KeyValue>(2);
     ArrayList<Annotation> annotations = new ArrayList<Annotation>(0);
@@ -369,6 +380,11 @@ final class TestCompactionQueue {
     kvs.add(makekv(qual2, val2));
 
     compactionq.compact(kvs, annotations);
+    // Compacted with only the first cell.
+    verify(tsdb, times(1)).put(KEY, MockBase.concatByteArrays(qual1),
+         MockBase.concatByteArrays(val1, ZERO));
+    // And we had to delete individual cells.
+    verify(tsdb, times(1)).delete(KEY, new byte[][] { qual1, qual2 });
   }
 
   @Test
@@ -464,8 +480,7 @@ final class TestCompactionQueue {
     final byte[] qual2 = { (byte) 0xF0, 0x0A, 0x41, 0x07 };
     final byte[] val2 = Bytes.fromLong(5L);
     final byte[] qual12 = MockBase.concatByteArrays(qual1, qual2);
-    kvs.add(makekv(qual12, MockBase.concatByteArrays(val1, val2, 
-        new byte[] { 1 })));
+    kvs.add(makekv(qual12, MockBase.concatByteArrays(val1, val2, ONE)));
     // This data point came late.  Note that its time delta falls in between
     // that of the two data points above.
     final byte[] qual3 = { 0x00, 0x57 };
@@ -476,8 +491,7 @@ final class TestCompactionQueue {
 
     // We had one row to compact, so one put to do.
     verify(tsdb, times(1)).put(KEY, MockBase.concatByteArrays(qual1, qual3, qual2),
-                               MockBase.concatByteArrays(val1, val3, val2, 
-                                   new byte[] { 1 }));
+                               MockBase.concatByteArrays(val1, val3, val2, ONE));
     // And we had to delete the individual cell + pre-existing compacted cell.
     verify(tsdb, times(1)).delete(KEY, new byte[][] { qual12, qual3 });
   }
@@ -494,8 +508,7 @@ final class TestCompactionQueue {
     final byte[] qual2 = { (byte) 0xF0, 0x0A, 0x41, 0x07 };
     final byte[] val2 = Bytes.fromLong(5L);
     final byte[] qual12 = MockBase.concatByteArrays(qual1, qual2);
-    kvs.add(makekv(qual12, MockBase.concatByteArrays(val1, val2, 
-        new byte[] { 1 })));
+    kvs.add(makekv(qual12, MockBase.concatByteArrays(val1, val2, ONE)));
     // This data point came late.  Note that its time delta falls in between
     // that of the two data points above.
     final byte[] qual3 = { (byte) 0xF0, 0x00, 0x01, 0x07 };
@@ -506,8 +519,7 @@ final class TestCompactionQueue {
 
     // We had one row to compact, so one put to do.
     verify(tsdb, times(1)).put(KEY, MockBase.concatByteArrays(qual1, qual3, qual2),
-                               MockBase.concatByteArrays(val1, val3, val2, 
-                                   new byte[] { 1 }));
+                               MockBase.concatByteArrays(val1, val3, val2, ONE));
     // And we had to delete the individual cell + pre-existing compacted cell.
     verify(tsdb, times(1)).delete(KEY, new byte[][] { qual12, qual3 });
   }
@@ -525,8 +537,7 @@ final class TestCompactionQueue {
     final byte[] qual2 = { 0x00, (byte) 0xF7 };
     final byte[] val2 = Bytes.fromLong(5L);
     final byte[] qual12 = MockBase.concatByteArrays(qual1, qual2);
-    kvs.add(makekv(qual12, MockBase.concatByteArrays(val1, val2, 
-        new byte[] { 1 })));
+    kvs.add(makekv(qual12, MockBase.concatByteArrays(val1, val2, ONE)));
     // This data point came late.  Note that its time delta falls in between
     // that of the two data points above.
     final byte[] qual3 = { 0x00, 0x07 };
@@ -537,16 +548,16 @@ final class TestCompactionQueue {
 
     // We had one row to compact, so one put to do.
     verify(tsdb, times(1)).put(KEY, MockBase.concatByteArrays(qual3, qual1, qual2),
-                               MockBase.concatByteArrays(val3, val1, val2, 
-                                   new byte[] { 1 }));
-    // And we had to delete the individual cell + pre-existing compacted cell.
-    verify(tsdb, times(1)).delete(KEY, new byte[][] { qual3, qual12 });
+                               MockBase.concatByteArrays(val3, val1, val2, ONE));
+    // And we had to delete the pre-existing compacted cell and the individual
+    // cell.
+    verify(tsdb, times(1)).delete(KEY, new byte[][] { qual12, qual3 });
   }
   
-  @Test (expected=IllegalDataException.class)
+  @Test
   public void secondCompactOverwrite() throws Exception {
     // In this test the row has already been compacted, and a new value for an
-    // old data point was written in the mean time
+    // old time point was written afterward.
     ArrayList<KeyValue> kvs = new ArrayList<KeyValue>(2);
     ArrayList<Annotation> annotations = new ArrayList<Annotation>(0);
     // This is 2 values already compacted together.
@@ -563,6 +574,11 @@ final class TestCompactionQueue {
     kvs.add(makekv(qual3, val3));
 
     compactionq.compact(kvs, annotations);
+    // New compacted row with qual1 and qual2 is not written because it's same
+    // as the pre-existing compacted row.
+    verify(tsdb, never()).put(anyBytes(), anyBytes(), anyBytes());
+    // And we had to delete the individual cell.
+    verify(tsdb, times(1)).delete(KEY, new byte[][] { qual3 });
   }
   
   @Test
@@ -750,22 +766,22 @@ final class TestCompactionQueue {
     final byte[] qual6 = { 0x00, 0x67 };
     final byte[] val6 = Bytes.fromLong(9L);
     final byte[] qual56 = MockBase.concatByteArrays(qual5, qual6);
-    kvs.add(makekv(qual12, MockBase.concatByteArrays(val1, val2, ZERO)));
-    kvs.add(makekv(qual34, MockBase.concatByteArrays(val3, val4, ZERO)));
-    kvs.add(makekv(qual56, MockBase.concatByteArrays(val5, val6, ZERO)));
+    kvs.add(makekv(qual12, MockBase.concatByteArrays(val1, val2, ONE)));
+    kvs.add(makekv(qual34, MockBase.concatByteArrays(val3, val4, ONE)));
+    kvs.add(makekv(qual56, MockBase.concatByteArrays(val5, val6, ONE)));
 
     final KeyValue kv = compactionq.compact(kvs, annotations);
     assertArrayEquals(
         MockBase.concatByteArrays(qual12, qual34, qual56), kv.qualifier());
     assertArrayEquals(
-        MockBase.concatByteArrays(val1, val2, val3, val4, val5, val6, ZERO), 
+        MockBase.concatByteArrays(val1, val2, val3, val4, val5, val6, ONE), 
         kv.value());    
     
     // We didn't have anything to write, the last cell is already the correct
     // compacted version of the row.
     verify(tsdb, times(1)).put(KEY, 
         MockBase.concatByteArrays(qual1, qual2, qual3, qual4, qual5, qual6),
-        MockBase.concatByteArrays(val1, val2, val3, val4, val5, val6, ZERO));
+        MockBase.concatByteArrays(val1, val2, val3, val4, val5, val6, ONE));
     // And we had to delete the 3 individual cells + the first pre-existing
     // compacted cell.
     verify(tsdb, times(1)).delete(KEY, new byte[][] { qual12, qual34, qual56 });

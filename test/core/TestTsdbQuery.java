@@ -833,11 +833,11 @@ public final class TestTsdbQuery {
     query.run();
   }
 
-  @Test (expected = IllegalDataException.class)
+  @Test
   public void runFloatAndIntSameTS() throws Exception {
-    // if a row has an integer and a float for the same timestamp, there will be
-    // two different qualifiers that will resolve to the same offset. This tosses
-    // an exception
+    // A row has an integer and a float for the same timestamp, there will be
+    // two different qualifiers that will resolve to the same offset. This does
+    // not toss an exception as dup data will be removed during the compaction.
     storeLongTimeSeriesSeconds(true, false);;
     HashMap<String, String> tags = new HashMap<String, String>(1);
     tags.put("host", "web01");
