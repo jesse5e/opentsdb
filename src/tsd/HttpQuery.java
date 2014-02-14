@@ -973,7 +973,7 @@ final class HttpQuery {
     httplatency.add(processing_time);
     String url = request.getUri();
     String msg = String.format("HTTP %s done in %d ms", url, processing_time);
-    if (url.endsWith("/api/put")) {
+    if (url.startsWith("/api/put")) {
       // NOTE: Suppresses too many log lines from /api/put.
       LOG.debug(msg);
     } else {
