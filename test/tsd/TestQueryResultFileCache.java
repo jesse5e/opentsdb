@@ -55,12 +55,13 @@ import org.powermock.modules.junit4.PowerMockRunner;
 @PrepareForTest({QueryResultFileCache.class, HttpQuery.class, TSDB.class})
 public class TestQueryResultFileCache {
 
-  private static final String CACHE_DIR = "/foo/barcache";
+  private static final String CACHE_DIR = "/path/to/cache";
   private static final long START_SEQUENCE = 17;
   private static final int TIME_107_SECS = 107;
   private static final long TIME_12345678_MILLIS = 12345678L;
   private static final int TIME_100000_SECS = 100000;
   private static final long MEM_CACHE_SIZE = 10;
+  private static final int NUM_SUB_DIRS = 7;
 
   private QueryResultFileCache.Util mockUtil;
   private PrintWriter mockPrintWriter;
@@ -75,8 +76,8 @@ public class TestQueryResultFileCache {
     mockHttpQuery = PowerMockito.mock(HttpQuery.class);
     mockChannel = Mockito.mock(Channel.class);
     PowerMockito.when(mockHttpQuery.channel()).thenReturn(mockChannel);
-    cache = new QueryResultFileCache(CACHE_DIR, mockUtil, START_SEQUENCE,
-                                     MEM_CACHE_SIZE);
+    cache = new QueryResultFileCache(CACHE_DIR, NUM_SUB_DIRS, START_SEQUENCE,
+                                     MEM_CACHE_SIZE, mockUtil);
   }
 
   @Test
@@ -104,17 +105,36 @@ public class TestQueryResultFileCache {
     assertFalse(key1.equals(key3));
   }
 
+  private String getExpectedSubDir(Key key) {
+    return String.format("%s/q%05d", CACHE_DIR,
+                         (key.hashCode() & 0x7FFFFFFF) % NUM_SUB_DIRS);
+  }
+
   @Test
   public void testCreateEntry() {
     Key key = new Key("foo_key");
     Mockito.when(mockUtil.currentTimeMillis()).thenReturn(TIME_12345678_MILLIS);
     Entry entry = cache.createEntry(key, "ffx", TIME_107_SECS);
     assertEquals(key, entry.getKey());
-    assertEquals(CACHE_DIR + "/foo_key.entry", entry.getEntryFilePath());
-    assertEquals(CACHE_DIR + "/foo_key-" + (START_SEQUENCE + 1),
+    String subdir = getExpectedSubDir(key);
+    assertEquals(subdir + "/foo_key.entry", entry.getEntryFilePath());
+    assertEquals(subdir + "/foo_key-" + (START_SEQUENCE + 1),
                  entry.getBasepath());
     assertEquals(entry.getBasepath() + ".ffx", entry.getDataFilePath());
     assertEquals(12345678L + 107 * 1000, entry.getExpirationTimeMillis());
+    verify(mockUtil).ensureDirs(subdir);
+  }
+
+  @Test
+  public void testEnsureCacheDirectory_justOnce() {
+    Key key = new Key("foo_key");
+    Mockito.when(mockUtil.currentTimeMillis()).thenReturn(TIME_12345678_MILLIS);
+    cache.createEntry(key, "ffx", TIME_107_SECS);
+    String subdir = getExpectedSubDir(key);
+    verify(mockUtil).ensureDirs(subdir);
+    cache.createEntry(key, "ffx", TIME_107_SECS + 1);
+    // Makes suer that ensureDirs was just called once.
+    verify(mockUtil).ensureDirs(anyString());
   }
 
   @Test
@@ -150,10 +170,11 @@ public class TestQueryResultFileCache {
     Key wantedKey = new Key("foo_key");
     File mockFile = Mockito.mock(File.class);
     Mockito.when(mockFile.exists()).thenReturn(false);
-    Mockito.when(mockUtil.newFile(CACHE_DIR + "/foo_key.entry"))
+    String subdir = getExpectedSubDir(wantedKey);
+    Mockito.when(mockUtil.newFile(subdir + "/foo_key.entry"))
         .thenReturn(mockFile);
     Entry cachedEntry = cache.getIfPresent(wantedKey);
-    verify(mockUtil).newFile(CACHE_DIR + "/foo_key.entry");
+    verify(mockUtil).newFile(subdir + "/foo_key.entry");
     assertNull(cachedEntry);
   }
 
@@ -162,11 +183,12 @@ public class TestQueryResultFileCache {
     Key wantedKey = new Key("foo_key");
     File mockFile = Mockito.mock(File.class);
     Mockito.when(mockFile.exists()).thenReturn(true);
-    Mockito.when(mockUtil.newFile(CACHE_DIR + "/foo_key.entry"))
+    String subdir = getExpectedSubDir(wantedKey);
+    Mockito.when(mockUtil.newFile(subdir + "/foo_key.entry"))
         .thenReturn(mockFile);
     List<String> lines = Lists.newArrayList("foo_key", "543219", "foo_key.entry",
                                             "foo_key-11", "foo_key-11.ffx");
-    Mockito.when(mockUtil.readAndCloseFile(CACHE_DIR + "/foo_key.entry"))
+    Mockito.when(mockUtil.readAndCloseFile(subdir + "/foo_key.entry"))
         .thenReturn(lines);
     Entry cachedEntry = cache.getIfPresent(wantedKey);
     assertNotNull(cachedEntry);
@@ -182,7 +204,8 @@ public class TestQueryResultFileCache {
     Key key = new Key("foo_key");
     Mockito.when(mockUtil.currentTimeMillis()).thenReturn(TIME_12345678_MILLIS);
     Entry entry = cache.createEntry(key, "ffx", TIME_107_SECS);
-    Mockito.when(mockUtil.newPrintWriter(CACHE_DIR + "/foo_key.entry"))
+    String subdir = getExpectedSubDir(key);
+    Mockito.when(mockUtil.newPrintWriter(subdir + "/foo_key.entry"))
         .thenReturn(mockPrintWriter);
     cache.put(entry);
     Key sameKey = new Key("foo_key");
@@ -197,11 +220,12 @@ public class TestQueryResultFileCache {
     Key wantedKey = new Key("foo_key");
     File mockFile = Mockito.mock(File.class);
     Mockito.when(mockFile.exists()).thenReturn(true);
-    Mockito.when(mockUtil.newFile(CACHE_DIR + "/foo_key.entry"))
+    String subdir = getExpectedSubDir(wantedKey);
+    Mockito.when(mockUtil.newFile(subdir + "/foo_key.entry"))
         .thenReturn(mockFile);
     List<String> lines = Lists.newArrayList("foo_key", "543219", "foo_key.entry",
                                             "foo_key-11", "foo_key-11.ffx");
-    Mockito.when(mockUtil.readAndCloseFile(CACHE_DIR + "/foo_key.entry"))
+    Mockito.when(mockUtil.readAndCloseFile(subdir + "/foo_key.entry"))
         .thenReturn(lines);
     Entry diskCachedEntry = cache.getIfPresent(wantedKey);
     assertNotNull(diskCachedEntry);
@@ -218,7 +242,8 @@ public class TestQueryResultFileCache {
     Key wantedKey = new Key("foo_key");
     Mockito.when(mockUtil.currentTimeMillis()).thenReturn(TIME_12345678_MILLIS);
     Entry entry = cache.createEntry(wantedKey, "ffx", TIME_107_SECS);
-    Mockito.when(mockUtil.newPrintWriter(CACHE_DIR + "/foo_key.entry"))
+    String subdir = getExpectedSubDir(wantedKey);
+    Mockito.when(mockUtil.newPrintWriter(subdir + "/foo_key.entry"))
         .thenReturn(mockPrintWriter);
     cache.put(entry);
     // A same key hits the cache.
@@ -226,12 +251,14 @@ public class TestQueryResultFileCache {
     assertEquals(entry, cache.getIfPresent(sameKey));
     Key otherKey = new Key("bar_key");
     File mockFile = Mockito.mock(File.class);
+    String otherSubdir = getExpectedSubDir(otherKey);
     Mockito.when(mockFile.exists()).thenReturn(false);
-    Mockito.when(mockUtil.newFile(CACHE_DIR + "/bar_key.entry"))
+    Mockito.when(mockUtil.newFile(otherSubdir + "/bar_key.entry"))
         .thenReturn(mockFile);
     // A different key misses the cache.
     Entry otherEntry = cache.getIfPresent(otherKey);
-    verify(mockUtil).newFile(CACHE_DIR + "/bar_key.entry");
+    verify(mockUtil, never()).newFile(subdir + "/foo_key.entry");
+    verify(mockUtil).newFile(otherSubdir + "/bar_key.entry");
     assertNull(otherEntry);
   }
 

@@ -222,4 +222,16 @@ public final class TestConfig {
     assertEquals("foo_script", config.get_restart_script());
     assertTrue(config.enable_restart_endpoint());
   }
+
+  @Test
+  public void testQueryResultCacheNumSubDirs() {
+    // The default value.
+    assertEquals(1023, config.getInt("tsd.query_result_cache.num_sub_dirs"));
+    assertEquals(1023, config.query_result_cache_num_sub_dirs());
+    // Set a new value.
+    config.overrideConfig("tsd.query_result_cache.num_sub_dirs", "177");
+    config.setDefaults();
+    assertEquals(177, config.getInt("tsd.query_result_cache.num_sub_dirs"));
+    assertEquals(177, config.query_result_cache_num_sub_dirs());
+  }
 }

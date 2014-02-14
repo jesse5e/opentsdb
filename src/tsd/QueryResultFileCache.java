@@ -66,24 +66,26 @@ final class QueryResultFileCache {
   /** The size of the in-memory cache of entry files. */
   private static final long MEM_CACHE_SIZE = 100000;
 
-  /** Sequence number for each entry. */
-  private final AtomicLong sequence;
   /** System call utility. */
   private final Util util;
-  /** Directory to store cache entry and data files. */
-  private final String cacheDir;
+  /** Sequence number for each entry. */
+  private final AtomicLong sequence;
+  /** All directories to store cache entry and data files. */
+  private final CacheDirectories cacheDirectories;
   /** In memory cache for entry files. */
   private final Cache<String, Entry> entries;
 
   public QueryResultFileCache(final TSDB tsdb) {
-    this(tsdb.getConfig().getString("tsd.http.cachedir"), new Util(),
-         System.currentTimeMillis(), MEM_CACHE_SIZE);
+    this(tsdb.getConfig().getString("tsd.http.cachedir"),
+         tsdb.getConfig().query_result_cache_num_sub_dirs(),
+         System.currentTimeMillis(), MEM_CACHE_SIZE, new Util());
   }
 
-  public QueryResultFileCache(final String cacheDir, Util util,
-                              long startSequence, long memCacheSize) {
+  @VisibleForTesting
+  public QueryResultFileCache(final String cacheDir, final int numSubDirs,
+                              long startSequence, long memCacheSize, Util util) {
     this.util = util;
-    this.cacheDir = cacheDir;
+    cacheDirectories = new CacheDirectories(cacheDir, numSubDirs, util);
     sequence = new AtomicLong(startSequence);
     entries = CacheBuilder.newBuilder()
         .maximumSize(memCacheSize)
@@ -106,7 +108,7 @@ final class QueryResultFileCache {
   public Entry createEntry(Key key, String suffix, int cacheTtlSecs) {
     long expirationMillis = util.currentTimeMillis() +
                             TimeUnit.SECONDS.toMillis(cacheTtlSecs);
-    return Entry.create(key, expirationMillis, cacheDir, suffix,
+    return Entry.create(key, expirationMillis, cacheDirectories, suffix,
                         sequence.incrementAndGet(), util);
   }
 
@@ -137,7 +139,7 @@ final class QueryResultFileCache {
       // key.
       Entry entry = entries.getIfPresent(wantedKey.key);
       if (entry == null) {
-        entry = Entry.loadEntryIfPresent(wantedKey, cacheDir, util);
+        entry = Entry.loadEntryIfPresent(wantedKey, cacheDirectories, util);
         if (entry != null) {
           // Caches the loaded entry.
           entries.put(entry.getKey().key, entry);
@@ -390,7 +392,7 @@ final class QueryResultFileCache {
      *
      * @param key A key
      * @param expirationTimeMillis Wall-clock time for the entry to expire
-     * @param cacheDir Directory to store files.
+     * @param cacheDirs Cache directories.
      * @param suffix Data file suffix
      * @param tempSequence Sequence number to avoid collision among same
      * queries in flight.
@@ -398,9 +400,10 @@ final class QueryResultFileCache {
      */
     @VisibleForTesting
     static Entry create(final Key key, final long expirationTimeMillis,
-                        final String cacheDir, final String suffix,
+                        final CacheDirectories cacheDirs, final String suffix,
                         final long tempSequence, final Util util) {
-      String temppath = new File(cacheDir, key.key).getAbsolutePath();
+      cacheDirs.ensureCacheDir(key);
+      String temppath = cacheDirs.getBasepathForEntryFile(key);
       String entryFilePath = temppath + ".entry";
       // sequence number is to avoid collision from multiple same in-flight
       // queries.
@@ -482,17 +485,17 @@ final class QueryResultFileCache {
      * Reads an entry from the given file and returns it.
      *
      * @param key A key
-     * @param cacheDir Directory to store files.
+     * @param cacheDirs Cache directories.
      * @param util System call utility for tests
      * @return An entry if presents. Otherwise null.
      * @throws IOException If there is an error while reading the file.
      */
     @Nullable
     private static Entry loadEntryIfPresent(final Key key,
-                                            final String cacheDir,
+                                            final CacheDirectories cacheDirs,
                                             final Util util)
                                                 throws IOException {
-      String temppath = new File(cacheDir, key.key).getAbsolutePath();
+      String temppath = cacheDirs.getBasepathForEntryFile(key);
       String entryFilePath = temppath + ".entry";
       if (util.newFile(entryFilePath).exists()) {
         List<String> lines = util.readAndCloseFile(entryFilePath);
@@ -520,6 +523,73 @@ final class QueryResultFileCache {
     }
   }
 
+  /** Manages multiple cache directories. */
+  private static class CacheDirectories {
+
+    /** The prefix for sub-directory names. */
+    private static final String SUB_DIR_PREFIX = "q";
+
+    /** System call utility. */
+    private final Util util;
+    /** The root directory of all cache directories. */
+    private final String cacheRootDir;
+    /**
+     * Directories to store cache entry and data files.
+     * An entry is null if we don't know if the directory exits.
+     */
+    private final String[] cacheDirs;
+
+    /**
+     * Creates a cache directory manager.
+     *
+     * @param cacheRootDir The root cache directory of all the sub directories.
+     * @param numSubDirs The number of sub directories.
+     * @param util System call utility.
+     */
+    private CacheDirectories(final String cacheRootDir, final int numSubDirs,
+                             final Util util) {
+      this.cacheRootDir = cacheRootDir;
+      this.cacheDirs = new String[numSubDirs];
+      this.util = util;
+    }
+
+    /**
+     * Gets a file path to be used to construct the entry file of the given key.
+     *
+     * @param key A key
+     * @return A file path to be used to construct an entry file path.
+     */
+    private synchronized String getBasepathForEntryFile(final Key key) {
+      return new File(getCacheDir(key), key.key).getAbsolutePath();
+    }
+
+    /** Ensures the cache directory exists for the given key. */
+    private synchronized void ensureCacheDir(final Key key) {
+      final int index = calcCacheDirIndex(key);
+      if (cacheDirs[index] == null) {
+        cacheDirs[index] = getCacheDir(key);
+        util.ensureDirs(cacheDirs[index]);
+      }
+    }
+
+    /** @return Gets the cache directory for the given key. */
+    private String getCacheDir(final Key key) {
+      final String dirname = String.format("%s%05d", SUB_DIR_PREFIX,
+                                           calcCacheDirIndex(key));
+      return new File(cacheRootDir, dirname).getAbsolutePath();
+    }
+
+    /**
+     * Calculates an index into the given cache directories for the given key.
+     *
+     * @param key A key
+     * @return A non-negative index
+     */
+    private int calcCacheDirIndex(final Key key) {
+      return (key.hashCode() & 0x7FFFFFFF) % cacheDirs.length;
+    }
+  }
+
   // ---------------- //
   // Logging helpers. //
   // ---------------- //
@@ -542,21 +612,45 @@ final class QueryResultFileCache {
   class ForTesting {
 
     String getCacheDir() {
-      return cacheDir;
+      return cacheDirectories.cacheRootDir;
     }
   }
 
   /** System call helper functions. */
   static class Util {
 
+    /** Creates a new File object for the given filename. */
     File newFile(String filename) {
       return new File(filename);
     }
 
+    /**
+     * Ensures the parent directory of the given directory exists.
+     *
+     * @param directory
+     */
+    void ensureDirs(String directory) {
+      new File(directory).mkdirs();
+    }
+
+    /**
+     * Creates a PrintWriter object for the given filename.
+     *
+     * @param filename The output filename
+     * @return A PrintWriter object for the given filename.
+     * @throws FileNotFoundException
+     */
     PrintWriter newPrintWriter(String filename) throws FileNotFoundException {
       return new PrintWriter(filename);
     }
 
+    /**
+     * Gets the contents of an InputStream as a list of Strings.
+     *
+     * @param filepath
+     * @return The contents as a list of Strings.
+     * @throws IOException
+     */
     @SuppressWarnings("unchecked")
     List<String> readAndCloseFile(String filepath) throws IOException {
       InputStream is = new FileInputStream(new File(filepath));
@@ -567,6 +661,7 @@ final class QueryResultFileCache {
       }
     }
 
+    /** Returns the current time in milliseconds. */
     long currentTimeMillis() {
       return System.currentTimeMillis();
     }

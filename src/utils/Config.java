@@ -54,6 +54,8 @@ public class Config {
 
   private static final String DEFAULT_RESTART_SCRIPT =
       "/usr/share/opentsdb/opentsdb_restart.py";
+  /** The number of sub directories of the query result disk cache. */
+  private static final int DEFAULT_QUERY_RESULT_CACHE_NUM_SUB_DIRS = 1023;
 
   // These are accessed often so need a set address for fast access (faster
   // than accessing the map. Their value will be changed when the config is 
@@ -98,6 +100,10 @@ public class Config {
 
   /** tsd.tsd.enable_diediedie_endpoint */
   private boolean enable_diediedie_endpoint = false;
+
+  /** tsd.query_result_cache.num_sub_dirs */
+  private int query_result_cache_num_sub_dirs =
+      DEFAULT_QUERY_RESULT_CACHE_NUM_SUB_DIRS;
 
   /**
    * The list of properties configured to their defaults or modified by users
@@ -220,6 +226,11 @@ public class Config {
   /** @return whether or not to enable the diediedie endpoint. */
   public boolean enable_diediedie_endpoint() {
     return enable_diediedie_endpoint;
+  }
+
+  /** @return The number of sub directories of the query result disk cache */
+  public int query_result_cache_num_sub_dirs() {
+    return query_result_cache_num_sub_dirs;
   }
 
   /**
@@ -412,6 +423,8 @@ public class Config {
     default_map.put("tsd.tsd.restart_script", DEFAULT_RESTART_SCRIPT);
     default_map.put("tsd.tsd.enable_restart_endpoint", "false");
     default_map.put("tsd.tsd.enable_diediedie_endpoint", "false");
+    default_map.put("tsd.query_result_cache.num_sub_dirs",
+        Integer.toString(DEFAULT_QUERY_RESULT_CACHE_NUM_SUB_DIRS));
 
     for (Map.Entry<String, String> entry : default_map.entrySet()) {
       if (!properties.containsKey(entry.getKey()))
@@ -438,6 +451,8 @@ public class Config {
         "tsd.tsd.enable_restart_endpoint");
     enable_diediedie_endpoint = this.getBoolean(
         "tsd.tsd.enable_diediedie_endpoint");
+    query_result_cache_num_sub_dirs = this.getInt(
+        "tsd.query_result_cache.num_sub_dirs");
   }
 
   /**
