@@ -88,7 +88,7 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
     }
 
     public synchronized Object call(Object result) throws Exception {
-      if (result == null) {
+      if (result != null &&  (result instanceof Exception)) {
         errors++;
       } else {
         success++;
@@ -247,10 +247,10 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
 
         if (Tags.looksLikeInteger(dp.getValue())) {
           tsdb.addPoint(dp.getMetric(), dp.getTimestamp(),
-              Tags.parseLong(dp.getValue()), dp.getTags()).addCallback(request_callback);
+              Tags.parseLong(dp.getValue()), dp.getTags()).addBoth(request_callback);
         } else {
           tsdb.addPoint(dp.getMetric(), dp.getTimestamp(),
-              Float.parseFloat(dp.getValue()), dp.getTags()).addCallback(request_callback);
+              Float.parseFloat(dp.getValue()), dp.getTags()).addBoth(request_callback);
         }
         success++;
       } catch (NumberFormatException x) {
