@@ -15,23 +15,30 @@ package net.opentsdb.tsd;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.powermock.api.mockito.PowerMockito.mock;
+import static org.powermock.api.mockito.PowerMockito.spy;
 
+import java.io.IOException;
+
+import com.stumbleupon.async.Deferred;
 import net.opentsdb.core.DataPoints;
 import net.opentsdb.core.Query;
 import net.opentsdb.core.TSDB;
 import net.opentsdb.core.TSQuery;
 import net.opentsdb.core.TSSubQuery;
+import net.opentsdb.uid.NoSuchUniqueName;
 import net.opentsdb.utils.Config;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.powermock.api.mockito.PowerMockito;
 import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 
-import com.stumbleupon.async.Deferred;
 
 /**
  * Unit tests for the Query RPC class that handles parsing user queries for
@@ -40,11 +47,12 @@ import com.stumbleupon.async.Deferred;
  * core.TestTSQuery and TestTSSubQuery classes
  */
 @RunWith(PowerMockRunner.class)
-@PrepareForTest({TSDB.class, Config.class, HttpQuery.class, Query.class, 
-  Deferred.class, TSQuery.class})
+@PrepareForTest({TSDB.class, Config.class, Deferred.class, HttpQuery.class, Query.class,
+  QueryRpc.class, QueryResultFileCache.class, TSQuery.class})
 public final class TestQueryRpc {
   private TSDB tsdb = null;
   final private Query empty_query = mock(Query.class);
+  final private QueryResultFileCache mock_query_cache = mock(QueryResultFileCache.class);
 
   @Before
   public void before() throws Exception {
@@ -314,6 +322,39 @@ public final class TestQueryRpc {
     QueryRpc.parseQuery(query);
   }
   
+  @Test
+  public void execute() throws IOException {
+    HttpQuery query = NettyMocks.getQuery(tsdb,
+      "/api/query?start=1h-ago&m=sum:sys.cpu.0&nocache");
+    TSQuery spy_ts_query = spy(QueryRpc.parseQuery(query));
+    PowerMockito.mockStatic(QueryRpc.class);
+    when(QueryRpc.parseQuery(query)).thenReturn(spy_ts_query);
+    Query mock_query = mock(Query.class);
+    Deferred<DataPoints[]> value = Deferred.fromResult(new DataPoints[]{});
+    when(mock_query.runAsync()).thenReturn(value);
+    Query[] mock_queries = new Query[] { mock_query };
+    doReturn(mock_queries).when(spy_ts_query).buildQueries(tsdb);
+    when(mock_query_cache.newKeyBuilder()).thenCallRealMethod();
+    QueryRpc query_rpc = new QueryRpc(mock_query_cache);
+
+    query_rpc.execute(tsdb, query);
+    assertTrue(query.response().toString().contains("HTTP/1.1 200 OK"));
+  }
+
+  @Test (expected = BadRequestException.class)
+  public void executeBadTags() throws IOException {
+    HttpQuery query = NettyMocks.getQuery(tsdb,
+      "/api/query?start=1h-ago&m=sum:sys.cpu.0&nocache{tag=foo}");
+    TSQuery spy_ts_query = spy(QueryRpc.parseQuery(query));
+    PowerMockito.mockStatic(QueryRpc.class);
+    when(QueryRpc.parseQuery(query)).thenReturn(spy_ts_query);
+    doThrow(new NoSuchUniqueName("bad tag value", "foo")).when(spy_ts_query).buildQueries(tsdb);
+    QueryRpc query_rpc = new QueryRpc(mock_query_cache);
+
+    query_rpc.execute(tsdb, query);
+    assertTrue(query.response().toString().contains("HTTP/1.1 200 OK"));
+  }
+
   //TODO(cl) fix this up and add unit tests for the rate options parsing
 //  @SuppressWarnings({ "unchecked", "rawtypes" })
 //  @Test

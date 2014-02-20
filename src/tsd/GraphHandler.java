@@ -52,6 +52,7 @@ import net.opentsdb.stats.Histogram;
 import net.opentsdb.stats.StatsCollector;
 import net.opentsdb.tsd.QueryResultFileCache.Entry;
 import net.opentsdb.tsd.QueryResultFileCache.KeyBuilder;
+import net.opentsdb.uid.NoSuchUniqueName;
 import net.opentsdb.utils.DateTime;
 import net.opentsdb.utils.JSON;
 
@@ -156,7 +157,12 @@ final class GraphHandler implements HttpRpc {
       throw new BadRequestException(HttpResponseStatus.BAD_REQUEST,
           e.getMessage(), tsQuery.toString(), e);
     }
-    return tsQuery.buildQueries(tsdb);
+    try {
+      return tsQuery.buildQueries(tsdb);
+    } catch (NoSuchUniqueName e) {
+      throw new BadRequestException(HttpResponseStatus.BAD_REQUEST,
+          e.getMessage(), tsQuery.toString(), e);
+    }
   }
 
   private void doGraph(final TSDB tsdb, final HttpQuery query)

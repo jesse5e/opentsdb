@@ -43,6 +43,7 @@ import net.opentsdb.core.Tags;
 import net.opentsdb.meta.Annotation;
 import net.opentsdb.stats.Histogram;
 import net.opentsdb.stats.StatsCollector;
+import net.opentsdb.uid.NoSuchUniqueName;
 import net.opentsdb.tsd.QueryResultFileCache.Entry;
 import net.opentsdb.tsd.QueryResultFileCache.Key;
 
@@ -139,7 +140,13 @@ final class QueryRpc implements HttpRpc {
           e.getMessage(), data_query.toString(), e);
     }
     
-    Query[] tsdbqueries = data_query.buildQueries(tsdb);
+    Query[] tsdbqueries;
+    try {
+      tsdbqueries = data_query.buildQueries(tsdb);
+    } catch (NoSuchUniqueName e) {
+      throw new BadRequestException(HttpResponseStatus.BAD_REQUEST,
+          e.getMessage(), data_query.toString(), e);
+    }
     final int nqueries = tsdbqueries.length;
     final ArrayList<DataPoints[]> results = 
       new ArrayList<DataPoints[]>(nqueries);
