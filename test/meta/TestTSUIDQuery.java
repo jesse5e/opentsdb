@@ -151,6 +151,8 @@ public final class TestTSUIDQuery {
         Deferred.fromResult(new byte[] { 0, 0, 1 }));
     when(tag_names.getIdAsync("dc"))
       .thenThrow(new NoSuchUniqueName("dc", "metric"));
+    when(tag_names.getId("dc"))
+    .thenThrow(new NoSuchUniqueName("dc", "metric"));
     when(tag_values.getId("web01")).thenReturn(new byte[] { 0, 0, 1 });
     when(tag_values.getIdAsync("web01")).thenReturn(
         Deferred.fromResult(new byte[] { 0, 0, 1 }));
@@ -167,6 +169,8 @@ public final class TestTSUIDQuery {
         Deferred.fromResult(new byte[] { 0, 0, 2 }));
     when(tag_values.getIdAsync("web03"))
       .thenThrow(new NoSuchUniqueName("web03", "metric"));
+    when(tag_values.getId("web03"))
+    .thenThrow(new NoSuchUniqueName("web03", "metric"));
     
     when(metrics.width()).thenReturn((short)3);
     when(tag_names.width()).thenReturn((short)3);
