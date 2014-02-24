@@ -13,6 +13,7 @@
 package net.opentsdb.tsd;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.stumbleupon.async.Deferred;
@@ -40,6 +41,9 @@ class Restarter implements HttpRpc, TelnetRpc {
 
   /** Path to the restart script. */
   private final String script;
+
+  /** True if restarting is in progress */
+  private final AtomicBoolean inProgress = new AtomicBoolean();
 
   Restarter(final Config config) {
     this(config, new Util());
@@ -83,10 +87,16 @@ class Restarter implements HttpRpc, TelnetRpc {
   }
 
   private void restart() {
+    if (inProgress.getAndSet(true)) {
+      LOG.info("Restarting is in progress.");
+      return;
+    }
     LOG.error(String.format("System is unstable. Restarting via %s.", script));
     try {
       util.exec(script);
-    } catch (IOException unused) {
+    } catch (Throwable unused) {
+      // We will just exit.
+    } finally {
       // Exits if we failed to restart. The exit code doesn't have any
       // significant meaning other than indicating an error.
       util.exit(3);
