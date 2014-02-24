@@ -537,8 +537,10 @@ pom.xml: pom.xml.in Makefile
 	} >$@-t
 	mv $@-t ../$@
 
+TIMESTAMP := $(shell date +"%Y%m%d%H%M%S")
 RPM_REVISION := 1
 RPM := opentsdb-$(PACKAGE_VERSION)-$(RPM_REVISION).noarch.rpm
+RPM_SNAPSHOT := opentsdb-$(PACKAGE_VERSION)-$(TIMESTAMP).noarch.rpm
 SOURCE_TARBALL := opentsdb-$(PACKAGE_VERSION).tar.gz
 rpm: $(RPM)
 
@@ -548,7 +550,7 @@ $(RPM): opentsdb.spec
 	rpmbuild --target=noarch --buildroot=`pwd`/rpmbuildroot -bb $<
 	test -f $@ || for rpm in $(RPM_TARGET)/$@ \
 		`awk '$$1=="Name:"{print $$2}' $<`.`awk '$$1=="BuildArch:"{print $$2}' $<`.rpm; do \
-	  test -f "$$rpm" && mv "$$rpm" $@ && break; \
+	  test -f "$$rpm" && mv "$$rpm" $(RPM_SNAPSHOT) && break; \
 	done
 	if test -d noarch; then rmdir noarch; fi
 
