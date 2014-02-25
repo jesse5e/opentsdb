@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.GZIPOutputStream;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.handler.codec.http.HttpMethod;
@@ -222,7 +223,7 @@ final class QueryRpc implements HttpRpc {
           data_query, results, globals);
       if (QueryResultFileCache.shouldUpdateCache(query)) {
         Entry cacheEntry = queryCache.createEntry(cacheKey, "results",
-                                                  serverCacheTtlSecs);
+                                                  serverCacheTtlSecs, true);
         replyFromResults(query, buffer, cacheEntry, clientCacheTtlSecs);
       } else {
         query.sendReply(buffer);
@@ -252,13 +253,16 @@ final class QueryRpc implements HttpRpc {
                                 final int clientCacheTtlSecs)
                                     throws IOException {
     OutputStream out = null;
+    OutputStream writer;
     try {
       // TODO: Reply before we save results to a file.
       out = new FileOutputStream(cacheEntry.getDataFilePath());
+      // TODO: Move compression to the cache.
+      writer = cacheEntry.getIsGzipped() ? new GZIPOutputStream(out) : out;
       while (results.readable()) {
         byte[] byteBuffer = new byte[results.readableBytes()];
         results.readBytes(byteBuffer);
-        out.write(byteBuffer);
+        writer.write(byteBuffer);
       }
     } finally {
       if (out != null) {

@@ -103,13 +103,17 @@ final class QueryResultFileCache {
    * @param key The key of the new entry
    * @param suffix The suffix of the new entry
    * @param cacheTtlSecs The Time-To-Live of the new entry
+   * @param isGzipped True if the entry is gzipped
    * @return A new cache entry
    */
-  public Entry createEntry(Key key, String suffix, int cacheTtlSecs) {
+  public Entry createEntry(Key key, String suffix, int cacheTtlSecs,
+      boolean isGzipped) {
+    // TODO: support different encodings
     long expirationMillis = util.currentTimeMillis() +
                             TimeUnit.SECONDS.toMillis(cacheTtlSecs);
-    return Entry.create(key, expirationMillis, cacheDirectories, suffix,
-                        sequence.incrementAndGet(), util);
+    return Entry.create(key, expirationMillis, cacheDirectories,
+                        suffix + (isGzipped ? ".gz" : ""),
+                        sequence.incrementAndGet(), isGzipped, util);
   }
 
   /**
@@ -384,6 +388,8 @@ final class QueryResultFileCache {
     private final String basepath;
     /** The path of query result file at the cache directory. */
     private final String dataFilePath;
+    /** Flag if cache contents are gzipped **/
+     private final boolean isGzipped;
     /** System call utility to help unit tests. */
     private final Util util;
 
@@ -396,12 +402,13 @@ final class QueryResultFileCache {
      * @param suffix Data file suffix
      * @param tempSequence Sequence number to avoid collision among same
      * queries in flight.
+     * @param isGzipped Flag if cache contents are gzipped
      * @param util System call utility for tests
      */
     @VisibleForTesting
     static Entry create(final Key key, final long expirationTimeMillis,
                         final CacheDirectories cacheDirs, final String suffix,
-                        final long tempSequence, final Util util) {
+                        final long tempSequence, final boolean isGzipped, final Util util) {
       cacheDirs.ensureCacheDir(key);
       String temppath = cacheDirs.getBasepathForEntryFile(key);
       String entryFilePath = temppath + ".entry";
@@ -412,18 +419,20 @@ final class QueryResultFileCache {
       // with the file type and the file name should be basepath + "." + suffix.
       String dataFilePath = String.format("%s.%s", basepath, suffix);
       return new Entry(key, expirationTimeMillis, entryFilePath, basepath,
-                       dataFilePath, util);
+                       dataFilePath, isGzipped, util);
     }
 
     @VisibleForTesting
     Entry(final Key key, final long expirationTimeMillis,
           final String entryFilePath, final String basepath,
-          final String dataFilePath, final Util util) {
+          final String dataFilePath, final boolean isGzipped,
+        final Util util) {
       this.key = key;
       this.expirationTimeMillis = expirationTimeMillis;
       this.entryFilePath = entryFilePath;
       this.basepath = basepath;
       this.dataFilePath = dataFilePath;
+      this.isGzipped = isGzipped;
       this.util = util;
     }
 
@@ -457,6 +466,11 @@ final class QueryResultFileCache {
       return basepath;
     }
 
+    /** Returns if the cache contents are gzipped */
+    boolean getIsGzipped() {
+      return isGzipped;
+    }
+
     /** Writes this entry to a file. */
     private void write() throws FileNotFoundException {
       // TODO: Add additional information to check corruption to retrieve data.
@@ -479,6 +493,7 @@ final class QueryResultFileCache {
       writer.println(entryFilePath);
       writer.println(basepath);
       writer.println(dataFilePath);
+      writer.println(isGzipped);
     }
 
     /**
@@ -515,8 +530,9 @@ final class QueryResultFileCache {
         fields[0] = lines.next();
         fields[1] = lines.next();
         fields[2] = lines.next();
+        boolean isGzipped = lines.hasNext() ? Boolean.parseBoolean(lines.next()) : false;
         return new Entry(key, expirationTimeMillis, fields[0], fields[1],
-                         fields[2], util);
+                         fields[2], isGzipped, util);
       } catch (NoSuchElementException e) {
         throw new IOException("Corrupted key file");
       }

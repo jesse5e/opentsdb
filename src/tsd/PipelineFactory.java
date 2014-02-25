@@ -19,6 +19,7 @@ import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.ChannelPipeline;
 import org.jboss.netty.channel.ChannelPipelineFactory;
 import org.jboss.netty.handler.codec.frame.FrameDecoder;
+import org.jboss.netty.handler.codec.http.HttpContentCompressor;
 import org.jboss.netty.handler.codec.string.StringEncoder;
 import org.jboss.netty.handler.codec.http.HttpChunkAggregator;
 import org.jboss.netty.handler.codec.http.HttpRequestDecoder;
@@ -103,6 +104,7 @@ public final class PipelineFactory implements ChannelPipelineFactory {
               tsdb.getConfig().max_chunked_requests()));
         }
         pipeline.addLast("encoder", new HttpResponseEncoder());
+        pipeline.addLast("gzip", new HttpContentCompressor());
       } else {
         pipeline.addLast("framer", new LineBasedFrameDecoder(1024));
         pipeline.addLast("encoder", ENCODER);

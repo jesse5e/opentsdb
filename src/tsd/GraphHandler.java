@@ -825,11 +825,11 @@ final class GraphHandler implements HttpRpc {
       serverCacheTtlSecs = QueryResultFileCache.serverCacheTtl(
           query, startSecs, endSecs, nowSecs);
       png = queryCache.createEntry(builder.setSuffix("png").build(), "png",
-                                   serverCacheTtlSecs);
+                                   serverCacheTtlSecs, false);
       json = queryCache.createEntry(builder.setSuffix("json").build(), "json",
-                                    serverCacheTtlSecs);
+                                    serverCacheTtlSecs, false);
       ascii = queryCache.createEntry(builder.setSuffix("txt").build(), "txt",
-                                     serverCacheTtlSecs);
+                                     serverCacheTtlSecs, false);
     }
   }
 

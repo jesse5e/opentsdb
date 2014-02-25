@@ -32,6 +32,7 @@ import ch.qos.logback.classic.spi.ThrowableProxyUtil;
 
 import com.stumbleupon.async.Deferred;
 
+import org.jboss.netty.handler.codec.http.HttpHeaders.Values;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -934,6 +935,7 @@ final class HttpQuery {
       return;
     }
     response.setStatus(status);
+    boolean isGzipped = path.endsWith(".gz");
     final long length = file.length();
     {
       final String mimetype = guessMimeTypeFromUri(path);
@@ -949,6 +951,11 @@ final class HttpQuery {
       response.setHeader(HttpHeaders.Names.CACHE_CONTROL,
                          "max-age=" + max_age);
       HttpHeaders.setContentLength(response, length);
+      // TODO: Check the request header to see if the client accepts gzip, if
+      // not we should ungzip the response
+      if (isGzipped) {
+        response.setHeader(HttpHeaders.Names.CONTENT_ENCODING, HttpHeaders.Values.GZIP);
+      }
       chan.write(response);
     }
     final DefaultFileRegion region = new DefaultFileRegion(file.getChannel(),
