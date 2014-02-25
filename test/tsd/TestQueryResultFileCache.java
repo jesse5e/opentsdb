@@ -126,7 +126,7 @@ public class TestQueryResultFileCache {
   }
 
   @Test
-  public void testEnsureCacheDirectory_justOnce() {
+  public void testEnsureCacheDirectory_always() {
     Key key = new Key("foo_key");
     Mockito.when(mockUtil.currentTimeMillis()).thenReturn(TIME_12345678_MILLIS);
     cache.createEntry(key, "ffx", TIME_107_SECS, true);
@@ -134,7 +134,7 @@ public class TestQueryResultFileCache {
     verify(mockUtil).ensureDirs(subdir);
     cache.createEntry(key, "ffx", TIME_107_SECS + 1, true);
     // Makes suer that ensureDirs was just called once.
-    verify(mockUtil).ensureDirs(anyString());
+    verify(mockUtil, times(2)).ensureDirs(anyString());
   }
 
   @Test
@@ -210,10 +210,38 @@ public class TestQueryResultFileCache {
         .thenReturn(mockPrintWriter);
     cache.put(entry);
     Key sameKey = new Key("foo_key");
+    File mockFile = Mockito.mock(File.class);
+    Mockito.when(mockFile.exists()).thenReturn(true);
+    Mockito.when(mockUtil.newFile(subdir + "/foo_key.entry"))
+        .thenReturn(mockFile);
     Entry memCachedEntry = cache.getIfPresent(sameKey);
     assertEquals(entry, memCachedEntry);
     // It should not be loaded from disk.
     verify(mockUtil, never()).readAndCloseFile(anyString());
+    verify(mockFile).exists();
+  }
+
+  @Test
+  public void testPut_entryCachedButRemoved() throws IOException {
+    Key key = new Key("foo_key");
+    Mockito.when(mockUtil.currentTimeMillis()).thenReturn(TIME_12345678_MILLIS);
+    Entry entry = cache.createEntry(key, "ffx", TIME_107_SECS, true);
+    String subdir = getExpectedSubDir(key);
+    Mockito.when(mockUtil.newPrintWriter(subdir + "/foo_key.entry"))
+        .thenReturn(mockPrintWriter);
+    cache.put(entry);
+    // Simulates the removed entry file.
+    Key sameKey = new Key("foo_key");
+    File mockFile = Mockito.mock(File.class);
+    Mockito.when(mockFile.exists()).thenReturn(false);
+    Mockito.when(mockUtil.newFile(subdir + "/foo_key.entry"))
+        .thenReturn(mockFile);
+    assertNull(cache.getIfPresent(sameKey));
+    // It should not be loaded from disk.
+    verify(mockUtil, never()).readAndCloseFile(anyString());
+    verify(mockFile).exists();
+    // It should miss the cache.
+    assertNull(cache.getIfPresent(sameKey));
   }
 
   @Test
@@ -224,18 +252,26 @@ public class TestQueryResultFileCache {
     String subdir = getExpectedSubDir(wantedKey);
     Mockito.when(mockUtil.newFile(subdir + "/foo_key.entry"))
         .thenReturn(mockFile);
-    List<String> lines = Lists.newArrayList("foo_key", "543219", "foo_key.entry",
+    List<String> lines = Lists.newArrayList("foo_key", "543219",
+                                            "/path/to/file.entry",
                                             "foo_key-11", "foo_key-11.ffx", "true");
     Mockito.when(mockUtil.readAndCloseFile(subdir + "/foo_key.entry"))
         .thenReturn(lines);
     Entry diskCachedEntry = cache.getIfPresent(wantedKey);
     assertNotNull(diskCachedEntry);
     verify(mockUtil).readAndCloseFile(anyString());
+    verify(mockFile).exists();
     Key sameKey = new Key("foo_key");
+    File mockEntryFile = Mockito.mock(File.class);
+    Mockito.when(mockEntryFile.exists()).thenReturn(true);
+    Mockito.when(mockUtil.newFile("/path/to/file.entry"))
+        .thenReturn(mockEntryFile);
     Entry memCachedEntry = cache.getIfPresent(sameKey);
     assertEquals(diskCachedEntry, memCachedEntry);
     // It should not be loaded from disk again.
     verify(mockUtil, times(1)).readAndCloseFile(anyString());
+    verify(mockFile, times(1)).exists();
+    verify(mockEntryFile).exists();
   }
 
   @Test
@@ -248,17 +284,22 @@ public class TestQueryResultFileCache {
         .thenReturn(mockPrintWriter);
     cache.put(entry);
     // A same key hits the cache.
+    File mockFile = Mockito.mock(File.class);
+    Mockito.when(mockFile.exists()).thenReturn(true);
+    Mockito.when(mockUtil.newFile(subdir + "/foo_key.entry"))
+        .thenReturn(mockFile);
     Key sameKey = new Key("foo_key");
     assertEquals(entry, cache.getIfPresent(sameKey));
-    Key otherKey = new Key("bar_key");
-    File mockFile = Mockito.mock(File.class);
-    String otherSubdir = getExpectedSubDir(otherKey);
-    Mockito.when(mockFile.exists()).thenReturn(false);
-    Mockito.when(mockUtil.newFile(otherSubdir + "/bar_key.entry"))
-        .thenReturn(mockFile);
+    verify(mockUtil).newFile(subdir + "/foo_key.entry");
     // A different key misses the cache.
+    Key otherKey = new Key("bar_key");
+    File mockNotExistingFile = Mockito.mock(File.class);
+    String otherSubdir = getExpectedSubDir(otherKey);
+    Mockito.when(mockNotExistingFile.exists()).thenReturn(false);
+    Mockito.when(mockUtil.newFile(otherSubdir + "/bar_key.entry"))
+        .thenReturn(mockNotExistingFile);
     Entry otherEntry = cache.getIfPresent(otherKey);
-    verify(mockUtil, never()).newFile(subdir + "/foo_key.entry");
+    verify(mockUtil, times(1)).newFile(subdir + "/foo_key.entry");
     verify(mockUtil).newFile(otherSubdir + "/bar_key.entry");
     assertNull(otherEntry);
   }

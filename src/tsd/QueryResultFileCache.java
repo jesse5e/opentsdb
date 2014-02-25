@@ -142,12 +142,18 @@ final class QueryResultFileCache {
       // TODO: Use get-and-loader and catch the exception for not existing
       // key.
       Entry entry = entries.getIfPresent(wantedKey.key);
-      if (entry == null) {
-        entry = Entry.loadEntryIfPresent(wantedKey, cacheDirectories, util);
-        if (entry != null) {
-          // Caches the loaded entry.
-          entries.put(entry.getKey().key, entry);
+      if (entry != null) {
+        if (!entry.existsOnDisk()) {
+          // Invalidates the entry that was removed from the disk.
+          entries.invalidate(entry);
+          return null;
         }
+        return entry;
+      }
+      entry = Entry.loadEntryIfPresent(wantedKey, cacheDirectories, util);
+      if (entry != null) {
+        // Caches the loaded entry.
+        entries.put(entry.getKey().key, entry);
       }
       return entry;
     } catch (IOException e) {
@@ -471,6 +477,11 @@ final class QueryResultFileCache {
       return isGzipped;
     }
 
+    /** @return true if the entry file exists. */
+    private boolean existsOnDisk() {
+      return util.newFile(entryFilePath).exists();
+    }
+
     /** Writes this entry to a file. */
     private void write() throws FileNotFoundException {
       // TODO: Add additional information to check corruption to retrieve data.
@@ -567,6 +578,14 @@ final class QueryResultFileCache {
       this.cacheRootDir = cacheRootDir;
       this.cacheDirs = new String[numSubDirs];
       this.util = util;
+      initCacheDirs();
+    }
+
+    /** Initialize cache directory paths. */
+    private void initCacheDirs() {
+      for (int i = 0; i < cacheDirs.length; ++i) {
+        cacheDirs[i] = composeCacheDirPath(i);
+      }
     }
 
     /**
@@ -581,17 +600,22 @@ final class QueryResultFileCache {
 
     /** Ensures the cache directory exists for the given key. */
     private synchronized void ensureCacheDir(final Key key) {
-      final int index = calcCacheDirIndex(key);
-      if (cacheDirs[index] == null) {
-        cacheDirs[index] = getCacheDir(key);
-        util.ensureDirs(cacheDirs[index]);
-      }
+      // Ensures directory always because the cache directories could be
+      // removed outside by a user.
+      util.ensureDirs(getCacheDir(key));
     }
 
     /** @return Gets the cache directory for the given key. */
     private String getCacheDir(final Key key) {
-      final String dirname = String.format("%s%05d", SUB_DIR_PREFIX,
-                                           calcCacheDirIndex(key));
+      return cacheDirs[calcCacheDirIndex(key)];
+    }
+
+    /**
+     * @return Composes the cache directory for the given cache directory
+     * index.
+     */
+    private String composeCacheDirPath(final int index) {
+      final String dirname = String.format("%s%05d", SUB_DIR_PREFIX, index);
       return new File(cacheRootDir, dirname).getAbsolutePath();
     }
 
