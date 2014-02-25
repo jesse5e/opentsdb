@@ -125,7 +125,7 @@ public class TestRestarter {
     when(BadTimeout.isSystemUnstable()).thenReturn(true);
     restarter.restartIfUnstable();
     verify(mockUtil).exec(SCRIPT);
-    verify(mockUtil, never()).exit(anyInt());
+    verify(mockUtil).exit(anyInt());
   }
 
   @Test
