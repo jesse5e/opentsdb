@@ -253,7 +253,7 @@ final class QueryRpc implements HttpRpc {
                                 final int clientCacheTtlSecs)
                                     throws IOException {
     OutputStream out = null;
-    OutputStream writer;
+    OutputStream writer = null;
     try {
       // TODO: Reply before we save results to a file.
       out = new FileOutputStream(cacheEntry.getDataFilePath());
@@ -265,6 +265,9 @@ final class QueryRpc implements HttpRpc {
         writer.write(byteBuffer);
       }
     } finally {
+      if (writer != null) {
+        writer.close();
+      }
       if (out != null) {
         out.close();
       }
