@@ -98,7 +98,11 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
         if (taskhandle != null) {
           taskhandle.cancel(false);
         }
-        execute_complete(query, success, errors, total, show_summary, details, request_complete);
+        final HttpResponseStatus httpcode = (errors > 0) ?
+            HttpResponseStatus.INTERNAL_SERVER_ERROR : HttpResponseStatus.OK;
+
+        execute_complete(query, success, errors, total, show_summary, details,
+            request_complete, httpcode);
       }
       return result;
     }
@@ -107,7 +111,8 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
       try {
         // not all items called back in time - complete it now as timeout.
         batch_timeouts.incrementAndGet();
-        execute_complete(query, success, errors, total, show_summary, details, request_complete);
+        execute_complete(query, success, errors, total, show_summary, details,
+            request_complete, HttpResponseStatus.REQUEST_TIMEOUT);
       }
       catch (Exception e) {
         LOG.error("Unexpected exception in timeout", e);
@@ -245,6 +250,12 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
           continue;
         }
 
+        // this will lookup metric and tags synchronous if they are not in cache. If ID's
+        // are not found and we can't auto create them we'll get a NoSuchUniqueName exception.
+        // The code in UniqueId will swallow HBase exceptions - in case of HBase errors we
+        // should get nothing here.
+        // If we create the missing ID, UniqueId will retry and eventually throws a HBase
+        // exception which will bubble up to netty.
         if (Tags.looksLikeInteger(dp.getValue())) {
           tsdb.addPoint(dp.getMetric(), dp.getTimestamp(),
               Tags.parseLong(dp.getValue()), dp.getTags()).addBoth(request_callback);
@@ -276,10 +287,12 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
 
     final long failures = total - success;
     if (waitflush < 0 || failures > 0) {
-      // if there was a failure or if we don't wait for all items
-      // to be written to storage return inline. Else we complete
-      // the request in the RequestCompletion class
-      execute_complete(query, success, failures, total, show_summary, details, request_complete);
+      // failures at this point are bad arguments
+      final HttpResponseStatus httpcode = (failures > 0) ?
+              HttpResponseStatus.BAD_REQUEST : HttpResponseStatus.OK;
+
+      execute_complete(query, success, failures, total, show_summary, details,
+          request_complete,  httpcode);
     }
   }
 
@@ -298,7 +311,7 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
    */
   void execute_complete(final HttpQuery query, final long success, final long failures, final long total,
                         final boolean show_summary, final ArrayList<HashMap<String, Object>> details,
-                        AtomicBoolean request_complete)
+                        AtomicBoolean request_complete, final HttpResponseStatus httpcode)
                         throws IOException {
 
     if (request_complete.getAndSet(true)) {
@@ -308,29 +321,19 @@ final class PutDataPointRpc implements TelnetRpc, HttpRpc {
       return;
     }
 
-    HttpResponseStatus httpcode = HttpResponseStatus.OK;
-    if (failures > 0) {
-      httpcode = HttpResponseStatus.BAD_REQUEST;
-    }
-    else if (success < total) {
-      httpcode = HttpResponseStatus.REQUEST_TIMEOUT;
-    }
-
     if (!show_summary && details == null) {
-      // empty response if no summary or details are requested
-      if (httpcode !=  HttpResponseStatus.OK) {
-        if (httpcode == HttpResponseStatus.REQUEST_TIMEOUT) {
-          query.sendStatusOnly(HttpResponseStatus.REQUEST_TIMEOUT);
-        }
-        else {
-          // for errors attach exception
+      if (httpcode == HttpResponseStatus.OK) {
+          query.sendReply(HttpResponseStatus.NO_CONTENT, "".getBytes());
+      } else if (httpcode == HttpResponseStatus.REQUEST_TIMEOUT ||
+          httpcode == HttpResponseStatus.INTERNAL_SERVER_ERROR ||
+          httpcode == HttpResponseStatus.SERVICE_UNAVAILABLE) {
+          query.sendStatusOnly(httpcode);
+      }
+      else {
+          // for all other errors attach exception
           query.badRequest(
               "One or more data points had errors. " +
               "Please see the TSD logs or append \"details\" to the put request");
-        }
-      }
-      else {
-        query.sendReply(HttpResponseStatus.NO_CONTENT, "".getBytes());
       }
     } else {
       final HashMap<String, Object> summary = new HashMap<String, Object>();
