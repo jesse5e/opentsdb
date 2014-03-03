@@ -12,27 +12,30 @@
 // see <http://www.gnu.org/licenses/>.
 package net.opentsdb.tsd;
 
+import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.nio.channels.Channels;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.GZIPInputStream;
 
 import ch.qos.logback.classic.spi.ThrowableProxy;
 import ch.qos.logback.classic.spi.ThrowableProxyUtil;
 
 import com.stumbleupon.async.Deferred;
 
-import org.jboss.netty.handler.codec.http.HttpHeaders.Values;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,7 +60,6 @@ import net.opentsdb.core.TSDB;
 import net.opentsdb.graph.Plot;
 import net.opentsdb.stats.Histogram;
 import net.opentsdb.stats.StatsCollector;
-import net.opentsdb.tsd.HttpSerializer;
 import net.opentsdb.utils.PluginLoader;
 
 /**
@@ -936,6 +938,12 @@ final class HttpQuery {
     }
     response.setStatus(status);
     boolean isGzipped = path.endsWith(".gz");
+    // Check the request header to see if the client accepts gzip, if
+    // not we should ungzip the response
+    String acceptedEncodings = request.getHeader(
+        HttpHeaders.Names.ACCEPT_ENCODING);
+    boolean useGzip = isGzipped && acceptedEncodings != null &&
+        acceptedEncodings.contains(HttpHeaders.Values.GZIP);
     final long length = file.length();
     {
       final String mimetype = guessMimeTypeFromUri(path);
@@ -951,16 +959,19 @@ final class HttpQuery {
       response.setHeader(HttpHeaders.Names.CACHE_CONTROL,
                          "max-age=" + max_age);
       HttpHeaders.setContentLength(response, length);
-      // TODO: Check the request header to see if the client accepts gzip, if
-      // not we should ungzip the response
-      if (isGzipped) {
-        response.setHeader(HttpHeaders.Names.CONTENT_ENCODING, HttpHeaders.Values.GZIP);
+
+      if (useGzip) {
+        response.setHeader(HttpHeaders.Names.CONTENT_ENCODING,
+            HttpHeaders.Values.GZIP);
       }
       chan.write(response);
     }
     final DefaultFileRegion region = new DefaultFileRegion(file.getChannel(),
-                                                           0, length);
-    final ChannelFuture future = chan.write(region);
+        0, length);
+    // Use the chached file if it is not gzipped at all or if it is gzipped and the client has the
+    // right headers
+    Object channelMessage = !isGzipped || useGzip ? region : unGzipFile(file);
+    final ChannelFuture future = chan.write(channelMessage);
     future.addListener(new ChannelFutureListener() {
       public void operationComplete(final ChannelFuture future) {
         region.releaseExternalResources();
@@ -970,6 +981,18 @@ final class HttpQuery {
     if (!HttpHeaders.isKeepAlive(request)) {
       future.addListener(ChannelFutureListener.CLOSE);
     }
+  }
+
+  private ChannelBuffer unGzipFile(RandomAccessFile file) throws IOException {
+    InputStream gzipStream = new GZIPInputStream(
+        Channels.newInputStream(file.getChannel()));
+    ChannelBuffer channelBuffer = ChannelBuffers.dynamicBuffer();
+    int b;
+    while( (b = gzipStream.read()) > 0) {
+      channelBuffer.writeByte(b);
+    }
+    gzipStream.close();
+    return channelBuffer;
   }
 
   /**
