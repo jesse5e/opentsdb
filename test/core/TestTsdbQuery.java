@@ -82,15 +82,11 @@ public final class TestTsdbQuery {
 
   @Before
   public void before() throws Exception {
-    config = new Config(false);
-    tsdb = new TSDB(config);
+    tsdb = TSDB.newTsdbForTest(client);
+    config = tsdb.getConfig();
     query = new TsdbQuery(tsdb);
 
     // replace the "real" field objects with mocks
-    Field cl = tsdb.getClass().getDeclaredField("client");
-    cl.setAccessible(true);
-    cl.set(tsdb, client);
-    
     Field met = tsdb.getClass().getDeclaredField("metrics");
     met.setAccessible(true);
     met.set(tsdb, metrics);

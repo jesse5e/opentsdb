@@ -63,7 +63,6 @@ import com.stumbleupon.async.Deferred;
   Scanner.class, DeleteRequest.class, Annotation.class, FileInputStream.class, 
   TextImporter.class})
 public class TestTextImporter {
-  private Config config;
   private TSDB tsdb = null;
   private HBaseClient client = mock(HBaseClient.class);
   private UniqueId metrics = mock(UniqueId.class);
@@ -94,17 +93,12 @@ public class TestTextImporter {
   
   @Before
   public void before() throws Exception {
-    config = new Config(false);
-    tsdb = new TSDB(config);
+    tsdb = TSDB.newTsdbForTest(client);
 
     storage = new MockBase(tsdb, client, true, true, true, true);
     storage.setFamily("t".getBytes(MockBase.ASCII()));
     
     // replace the "real" field objects with mocks
-    Field cl = tsdb.getClass().getDeclaredField("client");
-    cl.setAccessible(true);
-    cl.set(tsdb, client);
-    
     Field met = tsdb.getClass().getDeclaredField("metrics");
     met.setAccessible(true);
     met.set(tsdb, metrics);

@@ -241,7 +241,7 @@ public class TestAggregationIter {
     return views;
   }
 
-  private void testAggregatingMultiSpans(int numViews) {
+  private void testAggregatingMultiSpans(int numViews, double maxSeconds) {
     // Microbenchmark to measure the performance of AggregationIter.
     iterators = createSeekableViews(numViews, 1356990000000L, 1356993600000L,
                                     100);
@@ -265,17 +265,18 @@ public class TestAggregationIter {
                                      elapsed, totalDataPoints,
                                      timestampCheckSum, valueCheckSum,
                                      numViews));
-    assertTrue(elapsed < 10.0);
+    assertTrue("Too slow, " + elapsed + " > " + maxSeconds,
+        elapsed <= maxSeconds);
   }
 
   @Test
   public void testAggregating10000Spans() {
-    testAggregatingMultiSpans(10000);
+    testAggregatingMultiSpans(10000, 10.0);
   }
 
   @Test
   public void testAggregating500000Spans() {
-    testAggregatingMultiSpans(500000);
+    testAggregatingMultiSpans(500000, 16.0);
   }
 
   /** Iterates with buggy seek method. */

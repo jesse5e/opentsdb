@@ -67,7 +67,6 @@ import org.powermock.modules.junit4.PowerMockRunner;
   RowKey.class, Span.class, SpanGroup.class, IncomingDataPoints.class })
 public class TestTsdbQueryDownsample {
 
-  private Config config;
   private TSDB tsdb = null;
   private HBaseClient client = mock(HBaseClient.class);
   private UniqueId metrics = mock(UniqueId.class);
@@ -78,15 +77,10 @@ public class TestTsdbQueryDownsample {
 
   @Before
   public void before() throws Exception {
-    config = new Config(false);
-    tsdb = new TSDB(config);
+    tsdb = TSDB.newTsdbForTest(client);
     query = new TsdbQuery(tsdb);
 
     // replace the "real" field objects with mocks
-    Field cl = tsdb.getClass().getDeclaredField("client");
-    cl.setAccessible(true);
-    cl.set(tsdb, client);
-
     Field met = tsdb.getClass().getDeclaredField("metrics");
     met.setAccessible(true);
     met.set(tsdb, metrics);

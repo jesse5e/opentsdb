@@ -16,6 +16,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.powermock.api.mockito.PowerMockito.mock;
 
 import java.util.regex.PatternSyntaxException;
 
@@ -405,7 +406,7 @@ public final class TestTreeRule {
    * Mocks classes for testing the storage calls
    */
   private void setupStorage() throws Exception {
-    storage = new MockBase(true, true, true, true);
+    storage = new MockBase(mock(HBaseClient.class), true, true, true, true);
 
     final TreeRule stored_rule = new TreeRule(1);
     stored_rule.setLevel(2);

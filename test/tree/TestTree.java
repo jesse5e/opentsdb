@@ -18,6 +18,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.powermock.api.mockito.PowerMockito.mock;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -720,7 +721,7 @@ public final class TestTree {
    */
   private void setupStorage(final boolean default_get, 
       final boolean default_put) throws Exception {
-    storage = new MockBase(default_get, default_put, true, true);
+    storage = new MockBase(mock(HBaseClient.class), default_get, default_put, true, true);
     
     byte[] key = new byte[] { 0, 1 };
     // set pre-test values

@@ -30,7 +30,6 @@ import java.util.regex.PatternSyntaxException;
 import javax.xml.bind.DatatypeConverter;
 
 import net.opentsdb.core.TSDB;
-import net.opentsdb.utils.Config;
 
 import org.hbase.async.AtomicIncrementRequest;
 import org.hbase.async.Bytes;
@@ -161,23 +160,26 @@ public final class MockBase {
   }
 
   /**
-   * Setups up mock intercepts for all of the calls. Depending on the given
+   * Sets up mock intercepts for all of the calls. Depending on the given
    * flags, some mocks may not be enabled, allowing local unit tests to setup
    * their own mocks.
+   * @param client A mock client that may have been instantiated and should be
+   * captured for use with MockBase
    * @param default_get Enable the default .get() mock
    * @param default_put Enable the default .put() and .compareAndSet() mocks
    * @param default_delete Enable the default .delete() mock
    * @param default_scan Enable the Scanner mock implementation
    */
   public MockBase(
-      final boolean default_get, 
+      HBaseClient client,
+      final boolean default_get,
       final boolean default_put,
       final boolean default_delete,
       final boolean default_scan) throws IOException {
-    this(new TSDB(new Config(false)), mock(HBaseClient.class), 
+    this(TSDB.newTsdbForTest(client), client,
         default_get, default_put, default_delete, default_scan);
   }
-  
+
   /** @param family Sets the family for calls that need it */
   public void setFamily(final byte[] family) {
     this.default_family = family;

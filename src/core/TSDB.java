@@ -12,11 +12,14 @@
 // see <http://www.gnu.org/licenses/>.
 package net.opentsdb.core;
 
+import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+
+import javax.annotation.Nullable;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
@@ -114,12 +117,24 @@ public final class TSDB {
    * Constructor
    * @param config An initialized configuration object
    * @since 2.0
+   *
+   * NOTE: Use of this constructor is not recommended in tests. Creating a TSDB
+   * instance per each test function can cause out of threads error because the
+   * HBaseClient constructor creates a number of threads. Instead, use {@link
+   * newTsdbForTest} with a mocked HbaseClient.
    */
   public TSDB(final Config config) {
-    this.config = config;
-    this.client = new HBaseClient(
+    this(config, new HBaseClient(
         config.getString("tsd.storage.hbase.zk_quorum"),
-        config.getString("tsd.storage.hbase.zk_basedir"));
+        config.getString("tsd.storage.hbase.zk_basedir")));
+  }
+
+  /**
+   * Should be used only by {@link newTsdbForTest}.
+   */
+  private TSDB(final Config config, final HBaseClient client) {
+    this.config = config;
+    this.client = client;
     this.client.setFlushInterval(config.getShort("tsd.storage.flush_interval"));
     table = config.getString("tsd.storage.hbase.data_table").getBytes(CHARSET);
     uidtable = config.getString("tsd.storage.hbase.uid_table").getBytes(CHARSET);
@@ -143,7 +158,28 @@ public final class TSDB {
     }
     LOG.debug(config.dumpConfiguration());
   }
-  
+
+  /**
+   * Creates TSDB instances for tests with the provided HBaseClient.
+   *
+   * @param client a HBaseClient instance to use. Recommended to pass a mocked
+   * HBaseClient if possible. Each HBaseClient instance starts some number of
+   * threads. Creating a real HBaseClient per test function can cause out of
+   * threads error.
+   *
+   * TODO: Convert all relevant tests to use this method.
+   */
+  @Nullable
+  public static TSDB newTsdbForTest(HBaseClient client) {
+    try {
+      Config config = new Config(false);  // Do not auto-load the config file.
+      return new TSDB(config, client);
+    } catch (IOException e) {
+      LOG.error("newTsdbForTest saw an IOException, which should not happen. Returning null.");
+      return null;
+    }
+  }
+
   /** @return The data point column family name */
   public static byte[] FAMILY() {
     return FAMILY;

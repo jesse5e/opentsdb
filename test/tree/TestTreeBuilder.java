@@ -16,6 +16,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyInt;
+import static org.powermock.api.mockito.PowerMockito.mock;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -85,7 +86,7 @@ public final class TestTreeBuilder {
   
   @Before
   public void before() throws Exception {
-    storage = new MockBase(true, true, true, true);
+    storage = new MockBase(mock(HBaseClient.class), true, true, true, true);
     treebuilder = new TreeBuilder(storage.getTSDB(), tree);
     PowerMockito.spy(Tree.class);
     PowerMockito.doReturn(Deferred.fromResult(tree)).when(Tree.class, 
